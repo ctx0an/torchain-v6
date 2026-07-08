@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🧅 Torchain
+# Torchain
 
 **Fast, system-wide Tor anonymizer with an enterprise-grade Kali-themed dashboard.**
 
@@ -8,30 +8,103 @@
 
 <img src="docs/torchain-icon.png" alt="torchain" width="64" height="64">
 
-[![Build Android APK](https://github.com/ctx0an/Torchain/actions/workflows/build-apk.yml/badge.svg)](https://github.com/ctx0an/Torchain/actions/workflows/build-apk.yml)
-[![CI Status](https://github.com/ctx0an/Torchain/actions/workflows/ci.yml/badge.svg)](https://github.com/ctx0an/Torchain/actions/workflows/ci.yml)
+[![CI](https://github.com/ctx0an/Torchain/actions/workflows/ci.yml/badge.svg)](https://github.com/ctx0an/Torchain/actions/workflows/ci.yml)
+[![Build Windows](https://github.com/ctx0an/Torchain/actions/workflows/build-portable.yml/badge.svg)](https://github.com/ctx0an/Torchain/actions/workflows/build-portable.yml)
+[![Build Linux](https://github.com/ctx0an/Torchain/actions/workflows/build-appimage.yml/badge.svg)](https://github.com/ctx0an/Torchain/actions/workflows/build-appimage.yml)
+[![Build Android](https://github.com/ctx0an/Torchain/actions/workflows/build-apk.yml/badge.svg)](https://github.com/ctx0an/Torchain/actions/workflows/build-apk.yml)
 
 </div>
 
 ---
 
-## Why v5
+## Download
 
-v5 builds on the v4 rewrite and makes the whole experience **fully automatic**:
+Pre-built binaries for every platform. No compilation needed.
 
-| Goal | How v5 delivers |
-| --- | --- |
-| ⚡ **Fast startup** | Thin bash launcher + lazy-imported Python package. No work happens until you ask for it. |
-| 🪶 **Low memory** | Pure standard library. No background animation loops. The GUI idles at single-digit CPU and ~15 MB RAM. |
-| 🚀 **Fast Tor connect** | Persistent guard state, `AvoidDiskWrites`, tuned circuit timeouts, and live bootstrap polling over the control port. |
-| 🔑 **Fully automatic sudo** | Every privileged command — including the GUI — auto-elevates (supports `sudo`, `pkexec`, and Windows UAC). The GUI forwards `DISPLAY`/`XAUTHORITY` and grants the X cookie, so no more `Invalid MIT-MAGIC-COOKIE-1`. `/usr/bin/torchain` fallback symlink ensures `sudo torchain` works even when sudo's `secure_path` excludes `/usr/local/bin`. |
-| 🐕 **Self-healing watchdog** | A robust daemon that repairs tor/firewall if they drop and enforces automatic identity rotation. |
-| 🔌 **Run on boot** | One command (or checkbox) to start torchain at boot via systemd, with an rc.local/cron fallback. |
-| 🌉 **Rich bridges** | obfs4 / snowflake / meek_lite / webtunnel plus add/remove/list, **fetch** from the Tor Project, and **test** reachability with TCP ping. |
-| 🔁 **Migration manager** | Detects ANY older torchain install, removes it, and installs v5 in its place. |
-| 🖥️ **VM + bare-metal** | Detects VMware/VirtualBox/KVM/Xen/Hyper-V/containers and adapts (e.g. MAC-spoof rollback under hypervisor port security). |
-| 🛡️ **Robust error handling** | A typed exception hierarchy with human hints. Every failure rolls back **fail-closed** — you are never left half-protected. |
-| 🎨 **Enterprise design** | A Kali-Linux-themed dashboard with a unique generated app icon, sidebar navigation, status pills, stat tiles, and scrollable tables. |
+| Platform | File | Requirements |
+| --- | --- | --- |
+| **Windows 10/11** | [`torchain-portable.zip`](https://github.com/ctx0an/Torchain/releases/latest/download/torchain-portable.zip) | Run as administrator |
+| **Linux (x86_64)** | [`Torchain-x86_64.AppImage`](https://github.com/ctx0an/Torchain/releases/latest/download/Torchain-x86_64.AppImage) | `chmod +x` then run with sudo |
+| **Android** | [`app-debug.apk`](https://github.com/ctx0an/Torchain/releases/latest) | Android 8.0+ |
+
+### Windows
+
+1. Download `torchain-portable.zip` from [Releases](https://github.com/ctx0an/Torchain/releases/latest)
+2. Extract anywhere
+3. Right-click `torchain.exe` → **Run as administrator**
+4. First run extracts `tor.exe` to `%ProgramData%\torchain\`
+
+```
+torchain.exe gui           # dashboard
+torchain.exe start         # route traffic through Tor
+torchain.exe doctor        # check dependencies
+```
+
+### Linux
+
+1. Download `Torchain-x86_64.AppImage` from [Releases](https://github.com/ctx0an/Torchain/releases/latest)
+2. Make executable and run:
+
+```bash
+chmod +x Torchain-x86_64.AppImage
+sudo ./Torchain-x86_64.AppImage start    # route traffic through Tor
+sudo ./Torchain-x86_64.AppImage gui      # launch dashboard
+```
+
+No installation needed. Works on Ubuntu, Debian, Fedora, Arch, Kali, and most other distros.
+
+### Android
+
+Download the APK from [Releases](https://github.com/ctx0an/Torchain/releases/latest) and install it. Enable "Install from unknown sources" if prompted.
+
+---
+
+## Install from source
+
+If you prefer to build from source or want the latest unreleased changes:
+
+### Linux
+
+```bash
+git clone https://github.com/ctx0an/torchain.git
+cd torchain
+sudo ./setup.sh
+```
+
+Installs `tor`, `iptables`, `python3`, `python3-tk`, and the torchain package to `/usr/share/torchain`.
+
+### Windows
+
+```batch
+git clone https://github.com/ctx0an/torchain.git
+cd torchain
+windows\setup.bat
+```
+
+Downloads Python + extracts bundled `tor.exe`. No package manager needed.
+
+### Build portable binaries yourself
+
+**Windows (portable folder):**
+```batch
+pip install pyinstaller
+windows\build_portable.bat
+REM Output: dist\torchain\  (+ dist\torchain-portable.zip)
+```
+
+**Linux (AppImage):**
+```bash
+pip install pyinstaller
+linux/build_appimage.sh
+REM Output: dist/Torchain-x86_64.AppImage
+```
+
+**Android (APK):**
+```bash
+bash scripts/download_tor.sh
+./gradlew assembleDebug
+REM Output: app/build/outputs/apk/debug/app-debug.apk
+```
 
 ---
 
@@ -42,7 +115,7 @@ torchain            ← thin bash launcher (auto-elevates everything, incl. GUI 
 tc4/                ← Core Python package (Linux desktop engine & dashboard)
 ├── engine.py       ← orchestrates tor + firewall + spoofing + watchdog (fail-closed)
 ├── gui.py          ← event-driven Tk dashboard (no busy loops)
-└── ...             
+└── ...
 tcwin/              ← Windows 11 parallel package (WinINET proxy + Firewall engine & GUI)
 app/                ← Native Android application port (Jetpack Compose, Kotlin)
 ├── src/main/java   ← TorVpnService, TorController, and compose UI screens
@@ -55,151 +128,23 @@ Each module/package does one thing. Everything is dependency-light and unit-test
 
 ---
 
-## Install
+## Why v5
 
-```bash
-git clone https://github.com/ctx0an/torchain.git
-cd torchain
-sudo ./setup.sh
-```
+v5 builds on the v4 rewrite and makes the whole experience **fully automatic**:
 
-The installer pulls dependencies (`tor`, `iptables`, `iproute2`, `python3`, `python3-tk`),
-creates the dedicated `debian-tor` user, installs to `/usr/share/torchain`, and links
-`torchain` into your `PATH`.
-
----
-
-## Windows 11
-
-Torchain ships a parallel Windows 11 build (the `tcwin` package) with the same
-CLI and dashboard. Because Windows has no transparent proxy, it enforces Tor a
-different way: it launches a dedicated `tor.exe`, points the system (WinINET)
-proxy at Tor's SOCKS port, and flips **Windows Defender Firewall** to
-block-all-outbound except `tor.exe` — a fail-closed kill-switch.
-
-```
-REM Double-click setup.bat, or from any terminal in the repo folder:
-windows\setup.bat
-```
-
-**Zero package-manager dependencies.** No winget, no Chocolatey, no Scoop —
-just direct downloads and the bundled files already in the repo:
-
-1. **Python** is downloaded directly from python.org and installed quietly into
-   `%ProgramData%\torchain\app\python` — a **full install with Tcl/Tk** so the
-   GUI works out of the box. Nothing is added to the system PATH; the entire
-   install is removable by deleting the folder.
-2. **tor.exe** is extracted from the **bundled `Tor.zip`** already in
-   `windows\Tor.zip` — no download needed. Includes `geoip` databases and
-   pluggable transports (`lyrebird` for obfs4/meek bridges).
-
-The installer self-elevates via UAC. It's a `.bat` file — no PowerShell
-execution policy changes required.
-
-```
-torchain doctor        # check admin, tor.exe, firewall, tkinter
-torchain start         # route system traffic through Tor (UAC elevates)
-torchain status
-torchain stop          # ALWAYS restores connectivity first
-torchain gui           # dashboard (panic / pandora prompt for UAC)
-```
-
-### Built so it won't break Windows networking
-
-Breaking the network stack on Windows is far more painful to undo than on
-Linux, so the Windows build is deliberately conservative:
-
-- **Always-restore-first teardown.** `stop`, `panic`, and `pandora` put the
-  firewall policy back to *allow-outbound* and clear the proxy **before**
-  anything else, so a mid-operation crash can never strand you offline.
-- **Reversible kill-switch.** It only changes the firewall's default outbound
-  policy and adds removable `torchain-*` rules. It never disables the Firewall
-  service itself, and never touches routes or adapters.
-- **Safe recovery by default.** `torchain repair` (the "fix internet" option,
-  also a Dashboard button) restores the firewall, deletes torchain rules,
-  clears the proxy, flushes DNS, and renews DHCP — all reversible, never
-  destructive.
-- **Opt-in deep reset.** The aggressive stack reset (`netsh winsock reset` /
-  `netsh int ip reset`, which needs a reboot and can disturb other VPN/proxy
-  software) only runs when you explicitly ask: `torchain repair --deep`.
-- **Python-free safety net.** `windows\internet.bat` (and `internet.ps1`) restores connectivity
-  even if Python or torchain itself is broken — it self-elevates and runs the
-  same safe steps (add `/deep` for the stack reset).
-- **Safe uninstallation.** `windows\uninstall.bat` (also copied to
-  `%ProgramData%\torchain\app\uninstall.bat` during installation) stops all boot tasks
-  and background processes, restores original network/DNS settings, cleans up system PATH
-  and environment variables, deletes all shortcuts, and removes the Torchain files.
-
-### Portable (no install required)
-
-Build a portable `torchain\` folder that runs on any Windows 10/11
-machine — **no Python, no VC++ Redistributable, no installer needed**. The
-folder contains `torchain.exe` with the full Python runtime, tkinter GUI,
-and tor.exe (extracted from the bundled `Tor.zip` on first run).
-
-A **folder distribution** is used instead of a single .exe because tkinter's
-Tcl/Tk runtime needs its data directories on disk for the GUI to work.
-
-```batch
-REM From the repo root on a Windows machine with Python 3.9+:
-windows\build_portable.bat
-REM Output: dist\torchain\  (and dist\torchain-portable.zip)
-```
-
-Or manually:
-```batch
-pip install pyinstaller
-pyinstaller windows\torchain_portable.spec
-REM Output: dist\torchain\
-```
-
-To use:
-1. Extract `dist\torchain-portable.zip` on any Windows 10/11 machine
-2. Right-click `torchain.exe` → **Run as administrator**
-3. First run extracts `tor.exe` + geoip to `%ProgramData%\torchain\app\tor\`
-4. Use like the installed version:
-   ```
-   torchain.exe gui           # dashboard (full tkinter GUI)
-   torchain.exe start         # CLI
-   torchain.exe doctor        # check dependencies
-   ```
-
-> Verification note: the Windows port is validated by syntax check and code
-> review in this build, not a live Windows run.
-
-
----
-
-## Android Build
-
-Torchain includes a native Android port (`com.torchain.android`) that packs a Jetpack Compose frontend and runs a local Tor proxy service inside an Android VPN service framework (`TorVpnService`), ensuring a system-wide anonymized connection.
-
-### Features
-- **Local Tor Daemon Integration**: Embeds the native `libtor.so` binary (extracted automatically from Orbot release APKs).
-- **Jetpack Compose UI**: Modern, clean theme with Sidebar navigation matching the desktop design.
-- **Full protection**: VPN-mode routes all TCP packets through the local Tor daemon.
-- **Bridges Screen**: Configure custom bridge lines (obfs4, snowflake, meek_lite, webtunnel), fetch new bridges from Tor Project Moat API, and test TCP-ping reachability.
-- **Circuits Screen**: Live view of active Tor circuits with country flags and GeoIP lookup.
-- **Logs Screen**: Real-time rotating logs from the Tor service daemon.
-
-### Building Locally
-
-To build the APK locally, make sure you have the Android SDK and JDK 17+ installed:
-
-1. **Download Tor binaries and assets**:
-   Runs a script to pull the universal Orbot release APK and extract `libtor.so` libraries for all supported ABIs (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`) plus geoip databases:
-   ```bash
-   bash scripts/download_tor.sh
-   ```
-2. **Build the Debug APK**:
-   ```bash
-   ./gradlew assembleDebug
-   ```
-   The build outputs to `app/build/outputs/apk/debug/app-debug.apk`.
-
-### GitHub Actions CI
-The repository includes a [GitHub Actions workflow](.github/workflows/build-apk.yml) that automatically builds the Android application and uploads the debug APK as a workflow artifact upon every push to the `main` branch.
-
+| Goal | How v5 delivers |
+| --- | --- |
+| **Fast startup** | Thin bash launcher + lazy-imported Python package. No work happens until you ask for it. |
+| **Low memory** | Pure standard library. No background animation loops. The GUI idles at single-digit CPU and ~15 MB RAM. |
+| **Fast Tor connect** | Persistent guard state, `AvoidDiskWrites`, tuned circuit timeouts, and live bootstrap polling over the control port. |
+| **Fully automatic sudo** | Every privileged command — including the GUI — auto-elevates (supports `sudo`, `pkexec`, and Windows UAC). |
+| **Self-healing watchdog** | A robust daemon that repairs tor/firewall if they drop and enforces automatic identity rotation. |
+| **Run on boot** | One command (or checkbox) to start torchain at boot. |
+| **Rich bridges** | obfs4 / snowflake / meek_lite / webtunnel plus add/remove/list, **fetch** from the Tor Project, and **test** reachability. |
+| **Migration manager** | Detects ANY older torchain install, removes it, and installs v5 in its place. |
+| **VM + bare-metal** | Detects VMware/VirtualBox/KVM/Xen/Hyper-V/containers and adapts. |
+| **Fail-closed** | Every failure rolls back so you are never left half-protected. |
+| **Enterprise design** | Kali-themed dashboard with sidebar navigation, status pills, stat tiles, and scrollable tables. |
 
 ---
 
@@ -322,7 +267,8 @@ The dashboard sidebar gives you:
 
 See [`SECURITY.md`](SECURITY.md) for the disclosure policy.
 
-⚠️ torchain protects the network layer only. Read [`LIMITATION.md`](LIMITATION.md) for the full threat model and limitations.
+> torchain protects the network layer only. Read [`LIMITATION.md`](LIMITATION.md) for the full threat model and limitations.
+
 ---
 
 ## Contributing
@@ -335,7 +281,7 @@ byte-compilation on every push.
 
 Created by **ctx0an**, built with **Claude Opus 4.8**.
 
-If torchain is useful to you, please ⭐ [**star it on GitHub**](https://github.com/ctx0an/torchain) — there's also a one-click **★ Star on GitHub** button in the app's sidebar.
+If torchain is useful to you, please [**star it on GitHub**](https://github.com/ctx0an/torchain) — there's also a one-click **Star on GitHub** button in the app's sidebar.
 
 ## License
 
