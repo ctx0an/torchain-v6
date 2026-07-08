@@ -121,15 +121,40 @@ class ControlPortClient(
 
     private fun readerLoop() {
         val r = reader ?: return
+        var inReplyDataBlock = false
+        var inEventDataBlock = false
         try {
             while (running) {
                 val line = r.readLine() ?: break
-                if (line.isBlank()) continue
+                if (line.isBlank() && !inReplyDataBlock && !inEventDataBlock) continue
                 Logger.d("tor-ctl", "<< $line")
-                if (line.startsWith("650")) {
-                    parseAsyncLine(line)?.let { ev -> eventListener?.invoke(ev) }
-                } else {
+
+                if (inReplyDataBlock) {
                     replyQueue.put(line)
+                    if (line == ".") {
+                        inReplyDataBlock = false
+                    }
+                } else if (inEventDataBlock) {
+                    if (line == ".") {
+                        inEventDataBlock = false
+                    }
+                } else {
+                    val isAsync = line.length >= 4 && line.startsWith("650") &&
+                                  (line[3] == ' ' || line[3] == '-' || line[3] == '+')
+
+                    if (isAsync) {
+                        if (line.length >= 4 && line[3] == '+') {
+                            inEventDataBlock = true
+                        }
+                        parseAsyncLine(line)?.let { ev -> eventListener?.invoke(ev) }
+                    } else {
+                        val isDataBlockStart = line.length >= 4 && line[3] == '+' &&
+                                              line.substring(0, 3).all { it.isDigit() }
+                        if (isDataBlockStart) {
+                            inReplyDataBlock = true
+                        }
+                        replyQueue.put(line)
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -322,16 +347,30 @@ class ControlPortClient(
 
     suspend fun close() = withContext(Dispatchers.IO) {
         running = false
-        try { send("QUIT") } catch (_: Exception) {}
-        try { writer?.close() } catch (_: Exception) {}
-        try { reader?.close() } catch (_: Exception) {}
-        try { sock?.close() } catch (_: Exception) {}
+        val s = sock
+        val w = writer
+        val r = reader
+        val t = listenerThread
+
+        try {
+            if (w != null) {
+                Logger.d("tor-ctl", ">> QUIT")
+                w.write("QUIT\r\n")
+                w.flush()
+            }
+        } catch (_: Exception) {}
+        try { w?.close() } catch (_: Exception) {}
+        try { r?.close() } catch (_: Exception) {}
+        try { s?.close() } catch (_: Exception) {}
         replyQueue.offer(SHUTDOWN_SENTINEL)
-        try { listenerThread?.join(500) } catch (_: Exception) {}
-        writer = null
-        reader = null
-        sock = null
-        listenerThread = null
+        try { t?.join(500) } catch (_: Exception) {}
+
+        mutex.withLock {
+            if (sock === s) sock = null
+            if (writer === w) writer = null
+            if (reader === r) reader = null
+            if (listenerThread === t) listenerThread = null
+        }
     }
 
     private fun send(line: String) {

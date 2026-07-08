@@ -31,7 +31,14 @@ def _blank(size, color):
 
 
 def _blend(dst, src, a):
-    return [int(dst[i] * (1 - a) + src[i] * a) for i in range(3)] + [255]
+    dst_a = dst[3] / 255.0
+    out_a = dst_a * (1.0 - a) + a
+    if out_a <= 0:
+        return [0, 0, 0, 0]
+    out_r = int((dst[0] * dst_a * (1.0 - a) + src[0] * a) / out_a)
+    out_g = int((dst[1] * dst_a * (1.0 - a) + src[1] * a) / out_a)
+    out_b = int((dst[2] * dst_a * (1.0 - a) + src[2] * a) / out_a)
+    return [out_r, out_g, out_b, int(out_a * 255)]
 
 
 def _aa_ring(px, size, cx, cy, radius, width, color):

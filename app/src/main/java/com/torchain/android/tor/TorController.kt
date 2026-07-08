@@ -106,33 +106,32 @@ class TorController(private val context: Context) {
 
                 // Handle pluggable transports via IPtProxy
                 val ptPorts = mutableMapOf<String, Int>()
-                if (config.bridgesEnabled && config.bridgeTransport != "vanilla") {
+                if (config.bridgesEnabled) {
                     val t = config.bridgeTransport
-                    val tpName = if (t == "snowflake") "snowflake" else if (t == "custom") "obfs4" else t
-
-                    // obfs4 / custom require the user to supply at least one bridge
-                    // line (snowflake ships a built-in bridge in TorConfig). Without
-                    // any Bridge lines Tor would start with UseBridges=1 but nothing
-                    // to connect to, fail to bootstrap, and look like a crash — so
-                    // surface a clear, actionable error up front instead.
-                    if (tpName != "snowflake" && config.bridgeLines.isEmpty()) {
-                        val msg = "No bridge lines configured for $tpName. Open the Bridges " +
-                                   "screen and add or fetch at least one $tpName bridge line first."
+                    // All bridge transports except snowflake (which has built-in defaults) require configured bridge lines.
+                    if (t != "snowflake" && config.bridgeLines.isEmpty()) {
+                        val msg = "No bridge lines configured for $t. Open the Bridges " +
+                                   "screen and add or fetch at least one $t bridge line first."
                         Logger.e("tor", msg)
                         _status.value = _status.value.copy(
                             state = TorState.Error(msg), message = msg)
                         return@withContext false
                     }
 
-                    val port = startPluggableTransport(tpName)
-                    if (port > 0) {
-                        ptPorts[tpName] = port
-                    } else {
-                        val msg = "Failed to start pluggable transport: $tpName. Aborting Tor start."
-                        Logger.e("tor", msg)
-                        _status.value = _status.value.copy(
-                            state = TorState.Error(msg), message = msg)
-                        return@withContext false
+                    if (t != "vanilla") {
+                        // obfs4, custom, and meek_lite are all run by the Lyrebird (obfs4) plugin.
+                        // snowflake is run by the snowflake plugin.
+                        val tpName = if (t == "snowflake") "snowflake" else "obfs4"
+                        val port = startPluggableTransport(tpName)
+                        if (port > 0) {
+                            ptPorts[tpName] = port
+                        } else {
+                            val msg = "Failed to start pluggable transport: $tpName. Aborting Tor start."
+                            Logger.e("tor", msg)
+                            _status.value = _status.value.copy(
+                                state = TorState.Error(msg), message = msg)
+                            return@withContext false
+                        }
                     }
                 }
 
@@ -481,12 +480,11 @@ class TorController(private val context: Context) {
         if (stopping) return@withContext
         stopping = true
 
-        // Stop pluggable transports
         try {
             IPtProxy.IPtProxy.stopLyrebird()
             IPtProxy.IPtProxy.stopSnowflake()
             Logger.i("tor-pt", "Pluggable transports stopped")
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Logger.w("tor-pt", "Failed to stop pluggable transports", e)
         }
 

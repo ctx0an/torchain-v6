@@ -171,7 +171,9 @@ def fetch_bridges(transport: str = "obfs4", url: str | None = None) -> list[str]
         for key in (transport, "meek", "meek-azure", "snowflake", "webtunnel"):
             chunk = data.get(key, [])
             if isinstance(chunk, list):
-                lines.extend(chunk)
+                for item in chunk:
+                    if isinstance(item, str) and validate_bridge_line(item) and item not in lines:
+                        lines.append(item)
         # Also pick up *any* transport key (handles future transports).
         for val in data.values():
             if isinstance(val, list):
@@ -238,6 +240,17 @@ def test_bridges(bridge_lines: list[str] | None = None,
         bridge_lines = cfg.custom_bridges
     results: list[tuple[str, bool, str]] = []
     for line in bridge_lines:
+        line_strip = line.strip()
+        # Pluggable transports using dummy/placeholder addresses cannot be TCP-pinged directly.
+        is_placeholder = False
+        for pt in ("snowflake", "meek_lite", "webtunnel"):
+            if line_strip.startswith(pt):
+                is_placeholder = True
+                break
+        if is_placeholder:
+            results.append((line, True, "assumed reachable (pluggable transport)"))
+            continue
+
         addr = _extract_addr(line)
         if not addr:
             results.append((line, False, "no IP:port found"))

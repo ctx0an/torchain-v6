@@ -23,7 +23,7 @@ REM 2) Require elevation (net session succeeds only when elevated).
 net session >nul 2>&1
 if %errorlevel% neq 0 (
   echo Administrator rights required - relaunching elevated...
-  powershell -NoProfile -Command "Start-Process cmd.exe -ArgumentList '/c \"\"\"%~f0\"\"\" %*' -Verb RunAs"
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%APPDIR%torchain.ps1" %*
   exit /b 0
 )
 

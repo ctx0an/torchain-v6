@@ -72,18 +72,15 @@ class TorService : LifecycleService() {
                         }
                     }
                     is TorState.Error -> {
-                        if (proxyMode == "vpn") {
-                            try {
-                                stopService(Intent(this@TorService, com.torchain.android.vpn.TorVpnService::class.java))
-                                Logger.i("TorService", "Tor error detected, stopped TorVpnService")
-                            } catch (e: Exception) {
-                                Logger.w("TorService", "Failed to stop VPN on Tor error", e)
-                            }
-                        }
+                        // KEY FIX: Fail-closed on Tor error. Do NOT stop TorVpnService
+                        // when Tor encounters an error. Keeping the VPN service alive
+                        // ensures all traffic remains routed through the tunnel (and gets
+                        // blocked by LocalSocksProxy since Tor SOCKS port is down) instead
+                        // of leaking to the clear web.
                         vpnStarted = false
                     }
                     is TorState.Stopped -> {
-                        if (proxyMode == "vpn") {
+                        if (proxyMode == "vpn" && !startRequested) {
                             try {
                                 stopService(Intent(this@TorService, com.torchain.android.vpn.TorVpnService::class.java))
                                 Logger.i("TorService", "Tor stopped, stopped TorVpnService")
@@ -111,6 +108,7 @@ class TorService : LifecycleService() {
             ACTION_STOP  -> stopTor()
             ACTION_ROTATE -> lifecycleScope.launch { tor.rotateIdentity() }
             ACTION_PANIC -> lifecycleScope.launch { tor.panic() }
+            ACTION_REFRESH_CIRCUITS -> lifecycleScope.launch { tor.refreshCircuits() }
         }
         return START_STICKY
     }
@@ -269,6 +267,7 @@ class TorService : LifecycleService() {
         const val ACTION_STOP = "com.torchain.android.STOP"
         const val ACTION_ROTATE = "com.torchain.android.ROTATE"
         const val ACTION_PANIC = "com.torchain.android.PANIC"
+        const val ACTION_REFRESH_CIRCUITS = "com.torchain.android.REFRESH_CIRCUITS"
         const val ACTION_STATUS = "com.torchain.android.STATUS"
         const val EXTRA_STATE = "state"
         const val EXTRA_PID = "pid"
@@ -286,13 +285,34 @@ class TorService : LifecycleService() {
             else ctx.startService(i)
         }
         fun stop(ctx: Context) {
-            ctx.startService(Intent(ctx, TorService::class.java).setAction(ACTION_STOP))
+            val i = Intent(ctx, TorService::class.java).setAction(ACTION_STOP)
+            try {
+                ctx.startService(i)
+            } catch (e: IllegalStateException) {
+                // If app is in background, startService is blocked. Fall back to stopService directly
+                ctx.stopService(Intent(ctx, TorService::class.java))
+            }
         }
         fun rotate(ctx: Context) {
-            ctx.startService(Intent(ctx, TorService::class.java).setAction(ACTION_ROTATE))
+            try {
+                ctx.startService(Intent(ctx, TorService::class.java).setAction(ACTION_ROTATE))
+            } catch (e: Exception) {
+                Logger.e("TorService", "Failed to startService for rotate: ${e.message}")
+            }
         }
         fun panic(ctx: Context) {
-            ctx.startService(Intent(ctx, TorService::class.java).setAction(ACTION_PANIC))
+            try {
+                ctx.startService(Intent(ctx, TorService::class.java).setAction(ACTION_PANIC))
+            } catch (e: Exception) {
+                Logger.e("TorService", "Failed to startService for panic: ${e.message}")
+            }
+        }
+        fun refreshCircuits(ctx: Context) {
+            try {
+                ctx.startService(Intent(ctx, TorService::class.java).setAction(ACTION_REFRESH_CIRCUITS))
+            } catch (e: Exception) {
+                Logger.e("TorService", "Failed to startService for refreshCircuits: ${e.message}")
+            }
         }
     }
 }

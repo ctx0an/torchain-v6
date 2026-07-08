@@ -40,22 +40,67 @@ def _refresh() -> None:
         log.debug("proxy refresh notify failed: %s", exc)
 
 
-def _read(name: str):
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _KEY, 0, winreg.KEY_READ) as k:
+def _get_user_keys(write_access: bool = False) -> list[tuple[int, str]]:
+    """Get registry keys for HKEY_CURRENT_USER and any loaded user hives in HKEY_USERS.
+    
+    This ensures that when running elevated, we still apply settings to the 
+    standard user's profile hive.
+    """
+    keys = []
+    # Always include HKEY_CURRENT_USER
+    keys.append((winreg.HKEY_CURRENT_USER, ""))
+    
+    # Enumerate loaded user hives in HKEY_USERS
+    if winreg is not None:
         try:
-            value, _typ = winreg.QueryValueEx(k, name)
-            return value
-        except FileNotFoundError:
-            return None
+            with winreg.OpenKey(winreg.HKEY_USERS, "", 0, winreg.KEY_READ) as hk_users:
+                i = 0
+                while True:
+                    try:
+                        subkey_name = winreg.EnumKey(hk_users, i)
+                        # SIDs of real users start with S-1-5-21- and don't end in _Classes
+                        if subkey_name.startswith("S-1-5-21-") and not subkey_name.endswith("_Classes"):
+                            keys.append((winreg.HKEY_USERS, subkey_name))
+                        i += 1
+                    except OSError:
+                        break
+        except OSError:
+            pass
+    return keys
+
+
+def _read_val(key, name: str):
+    try:
+        value, _typ = winreg.QueryValueEx(key, name)
+        if isinstance(value, bytes):
+            return value.hex()
+        return value
+    except FileNotFoundError:
+        return None
 
 
 def _save_current() -> None:
     try:
-        state = {
-            "ProxyEnable": _read("ProxyEnable"),
-            "ProxyServer": _read("ProxyServer"),
-            "AutoConfigURL": _read("AutoConfigURL"),
-        }
+        state = {}
+        for root, subkey in _get_user_keys(write_access=False):
+            key_repr = subkey if subkey else "HKCU"
+            path = f"{subkey}\\{_KEY}".strip("\\")
+            try:
+                with winreg.OpenKey(root, path, 0, winreg.KEY_READ) as k:
+                    state[key_repr] = {
+                        "ProxyEnable": _read_val(k, "ProxyEnable"),
+                        "ProxyServer": _read_val(k, "ProxyServer"),
+                        "AutoConfigURL": _read_val(k, "AutoConfigURL"),
+                    }
+                    try:
+                        with winreg.OpenKey(root, path + "\\Connections", 0, winreg.KEY_READ) as ck:
+                            state[key_repr]["DefaultConnectionSettings"] = _read_val(ck, "DefaultConnectionSettings")
+                            state[key_repr]["SavedLegacySettings"] = _read_val(ck, "SavedLegacySettings")
+                    except OSError:
+                        pass
+            except OSError:
+                pass
+        
         os.makedirs(DATA_DIR, exist_ok=True)
         with open(_STATE, "w", encoding="utf-8") as fh:
             json.dump(state, fh)
@@ -70,14 +115,26 @@ def enable(socks_port: int = SOCKS_PORT) -> None:
     if not os.path.exists(_STATE):
         _save_current()
     server = f"socks=127.0.0.1:{socks_port}"
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _KEY, 0, winreg.KEY_SET_VALUE) as k:
-        winreg.SetValueEx(k, "ProxyEnable", 0, winreg.REG_DWORD, 1)
-        winreg.SetValueEx(k, "ProxyServer", 0, winreg.REG_SZ, server)
-        # A PAC/AutoConfig URL would override the manual proxy; clear it.
+    
+    for root, subkey in _get_user_keys(write_access=True):
+        path = f"{subkey}\\{_KEY}".strip("\\")
         try:
-            winreg.DeleteValue(k, "AutoConfigURL")
-        except FileNotFoundError:
-            pass
+            with winreg.OpenKey(root, path, 0, winreg.KEY_SET_VALUE) as k:
+                winreg.SetValueEx(k, "ProxyEnable", 0, winreg.REG_DWORD, 1)
+                winreg.SetValueEx(k, "ProxyServer", 0, winreg.REG_SZ, server)
+                try:
+                    winreg.DeleteValue(k, "AutoConfigURL")
+                except FileNotFoundError:
+                    pass
+            try:
+                with winreg.OpenKey(root, path + "\\Connections", 0, winreg.KEY_SET_VALUE) as ck:
+                    winreg.DeleteValue(ck, "DefaultConnectionSettings")
+                    winreg.DeleteValue(ck, "SavedLegacySettings")
+            except OSError:
+                pass
+        except OSError as exc:
+            log.debug("failed to set proxy for key %s\\%s: %s", root, path, exc)
+            
     _refresh()
     log.info("system proxy set to %s", server)
 
@@ -92,20 +149,55 @@ def disable() -> None:
             prev = json.load(fh)
     except (OSError, json.JSONDecodeError):
         prev = {}
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _KEY, 0, winreg.KEY_SET_VALUE) as k:
-        winreg.SetValueEx(k, "ProxyEnable", 0, winreg.REG_DWORD,
-                          int(prev.get("ProxyEnable") or 0))
-        server = prev.get("ProxyServer")
-        if server:
-            winreg.SetValueEx(k, "ProxyServer", 0, winreg.REG_SZ, server)
-        else:
+        
+    for root, subkey in _get_user_keys(write_access=True):
+        key_repr = subkey if subkey else "HKCU"
+        path = f"{subkey}\\{_KEY}".strip("\\")
+        user_prev = prev.get(key_repr, {})
+        try:
+            with winreg.OpenKey(root, path, 0, winreg.KEY_SET_VALUE) as k:
+                winreg.SetValueEx(k, "ProxyEnable", 0, winreg.REG_DWORD,
+                                  int(user_prev.get("ProxyEnable") or 0))
+                server = user_prev.get("ProxyServer")
+                if server:
+                    winreg.SetValueEx(k, "ProxyServer", 0, winreg.REG_SZ, server)
+                else:
+                    try:
+                        winreg.DeleteValue(k, "ProxyServer")
+                    except FileNotFoundError:
+                        pass
+                pac = user_prev.get("AutoConfigURL")
+                if pac:
+                    winreg.SetValueEx(k, "AutoConfigURL", 0, winreg.REG_SZ, pac)
+                else:
+                    try:
+                        winreg.DeleteValue(k, "AutoConfigURL")
+                    except OSError:
+                        pass
             try:
-                winreg.DeleteValue(k, "ProxyServer")
-            except FileNotFoundError:
+                with winreg.OpenKey(root, path + "\\Connections", 0, winreg.KEY_SET_VALUE) as ck:
+                    dcs = user_prev.get("DefaultConnectionSettings")
+                    if dcs:
+                        winreg.SetValueEx(ck, "DefaultConnectionSettings", 0, winreg.REG_BINARY, bytes.fromhex(dcs))
+                    else:
+                        try:
+                            winreg.DeleteValue(ck, "DefaultConnectionSettings")
+                        except OSError:
+                            pass
+                            
+                    sls = user_prev.get("SavedLegacySettings")
+                    if sls:
+                        winreg.SetValueEx(ck, "SavedLegacySettings", 0, winreg.REG_BINARY, bytes.fromhex(sls))
+                    else:
+                        try:
+                            winreg.DeleteValue(ck, "SavedLegacySettings")
+                        except OSError:
+                            pass
+            except OSError:
                 pass
-        pac = prev.get("AutoConfigURL")
-        if pac:
-            winreg.SetValueEx(k, "AutoConfigURL", 0, winreg.REG_SZ, pac)
+        except OSError:
+            pass
+            
     _refresh()
     try:
         os.remove(_STATE)
@@ -117,8 +209,14 @@ def disable() -> None:
 def is_set(socks_port: int = SOCKS_PORT) -> bool:
     if winreg is None:
         return False
-    try:
-        return bool(_read("ProxyEnable")) and \
-            str(socks_port) in str(_read("ProxyServer") or "")
-    except OSError:
-        return False
+    for root, subkey in _get_user_keys(write_access=False):
+        path = f"{subkey}\\{_KEY}".strip("\\")
+        try:
+            with winreg.OpenKey(root, path, 0, winreg.KEY_READ) as k:
+                enable_val = _read_val(k, "ProxyEnable")
+                server_val = _read_val(k, "ProxyServer")
+                if bool(enable_val) and str(socks_port) in str(server_val or ""):
+                    return True
+        except OSError:
+            pass
+    return False

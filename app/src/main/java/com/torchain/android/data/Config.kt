@@ -10,7 +10,28 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-private val Context.dataStore by preferencesDataStore(name = "torchain_prefs")
+import android.os.Build
+import java.io.File
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+
+private val dataStoreLock = Any()
+@Volatile
+private var cachedDataStore: DataStore<Preferences>? = null
+
+private val Context.dataStore: DataStore<Preferences>
+    get() = synchronized(dataStoreLock) {
+        cachedDataStore ?: PreferenceDataStoreFactory.create(
+            produceFile = {
+                val storageContext = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    applicationContext.createDeviceProtectedStorageContext()
+                } else {
+                    applicationContext
+                }
+                File(storageContext.filesDir, "datastore/torchain_prefs.preferences_pb")
+            }
+        ).also { cachedDataStore = it }
+    }
 
 data class TorchainConfig(
     val exitCountry: String = "",

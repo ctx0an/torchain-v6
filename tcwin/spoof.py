@@ -97,8 +97,10 @@ def _norm(mac: str) -> str:
 
 
 def _render(name: str, mac: str) -> str:
+    # Escape single quotes in adapter names for PowerShell single-quoted string
+    name_escaped = name.replace("'", "''")
     return (_SET_MAC_PS
-            .replace("@NAME@", name)
+            .replace("@NAME@", name_escaped)
             .replace("@MAC@", mac)
             .replace("@CLASS@", _NET_CLASS))
 

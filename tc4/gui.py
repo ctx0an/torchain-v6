@@ -857,6 +857,12 @@ class TorChainGUI:
                 self._log_pos = 0
             if not os.path.exists(LOG_FILE):
                 return
+            try:
+                size = os.path.getsize(LOG_FILE)
+            except OSError:
+                size = 0
+            if size < self._log_pos:
+                self._log_pos = 0
             with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as fh:
                 fh.seek(self._log_pos)
                 chunk = fh.read()
@@ -866,6 +872,10 @@ class TorChainGUI:
                 if full:
                     self.log_text.delete("1.0", "end")
                 self.log_text.insert("end", chunk)
+                # Cap the text widget content to 5000 lines to prevent memory leaks/unbounded growth
+                num_lines = int(self.log_text.index("end-1c").split(".")[0])
+                if num_lines > 5000:
+                    self.log_text.delete("1.0", f"{num_lines - 5000}.0")
                 self.log_text.see("end")
                 self.log_text.configure(state="disabled")
         except OSError:

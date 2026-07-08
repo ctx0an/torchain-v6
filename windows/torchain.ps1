@@ -38,7 +38,18 @@ if (-not $py) {
 
 if (-not (Test-Admin)) {
     Write-Host "Administrator rights required - relaunching elevated..." -ForegroundColor Yellow
-    $inner = "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`" " + ($Args -join " ")
+    $escapedArgs = $Args | ForEach-Object {
+        $escaped = $_ -replace '"', '\"'
+        if ($escaped -match '[\s"]') {
+            '"' + $escaped + '"'
+        } else {
+            $escaped
+        }
+    }
+    $inner = "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`""
+    if ($escapedArgs) {
+        $inner += " " + ($escapedArgs -join " ")
+    }
     Start-Process powershell -Verb RunAs -ArgumentList $inner | Out-Null
     exit 0
 }

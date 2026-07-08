@@ -95,13 +95,17 @@ def run_foreground() -> int:
         while True:
             time.sleep(interval)
             try:
-                st = engine.status()
+                cfg = config_mod.load()
+            except Exception:
+                pass
+            if not cfg.active:
+                _log("torchain deactivated by user; watchdog standing down")
+                break
+            try:
+                st = engine.status(cfg)
             except Exception as exc:  # noqa: BLE001
                 _log(f"status error: {exc}")
                 continue
-            if not st.active:
-                _log("torchain inactive; watchdog standing down")
-                break
             if not st.tor_running:
                 fails += 1
                 _log(f"tor down (attempt {fails}); restarting")

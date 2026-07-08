@@ -177,16 +177,23 @@ def start(cfg: Config | None = None, *, on_progress=None, supervise: bool = True
             spoof.spoof_mac()
         if cfg.spoof_hostname:
             spoof.spoof_hostname()
-        if not pid_alive(_read_pid()):
-            _start_tor(cfg)
+        pid = _read_pid()
+        if not pid_alive(pid):
+            pid = _start_tor(cfg)
             started_tor = True
-        ok = wait_bootstrap(timeout=90, on_progress=on_progress)
+
+        # Engage firewall early to prevent leaks during bootstrapping
+        firewall.up(cfg, find_tor())
+
+        ok = wait_bootstrap(timeout=90, on_progress=on_progress, check_pid=pid)
         if not ok:
+            if not pid_alive(pid):
+                raise TorError("tor process terminated unexpectedly during bootstrapping",
+                               hint="Check for port conflicts (is another Tor instance running?) or logs in tor.log.")
             raise TorError("tor did not finish bootstrapping in time",
                            hint="Check your connection or enable bridges.")
         proxy.enable(cfg.socks_port)
         proxy_set = True
-        firewall.up(cfg, find_tor())
         cfg.active = True
         config_mod.save(cfg)
         if supervise and cfg.watchdog_enabled:
@@ -206,13 +213,14 @@ def start(cfg: Config | None = None, *, on_progress=None, supervise: bool = True
                     proxy.disable()
             finally:
                 if started_tor:
-                    _stop_tor()
+                    _stop_tor(cfg)
                 if cfg.spoof_mac or cfg.spoof_hostname:
                     spoof.restore()
         raise
 
 
-def _stop_tor() -> None:
+def _stop_tor(cfg: Config | None = None) -> None:
+    # 1. Stop process by tracked PID
     pid = _read_pid()
     if pid_alive(pid):
         run_ok(["taskkill", "/PID", str(pid), "/T", "/F"])
@@ -220,6 +228,23 @@ def _stop_tor() -> None:
             if not pid_alive(pid):
                 break
             time.sleep(0.1)
+
+    # 2. Stop process by querying the control port (for untracked orphaned tor processes)
+    cfg = cfg or config_mod.load()
+    try:
+        with ControlClient(port=cfg.control_port) as c:
+            pid_str = c.get_info("process/pid").strip()
+            if pid_str.isdigit():
+                pid_val = int(pid_str)
+                if pid_alive(pid_val):
+                    run_ok(["taskkill", "/PID", str(pid_val), "/T", "/F"])
+                    for _ in range(30):
+                        if not pid_alive(pid_val):
+                            break
+                        time.sleep(0.1)
+    except Exception:
+        pass
+
     try:
         os.remove(_PIDFILE)
     except OSError:
@@ -242,7 +267,7 @@ def stop(cfg: Config | None = None) -> Status:
             proxy.disable()
         finally:
             try:
-                _stop_tor()
+                _stop_tor(cfg)
             finally:
                 if cfg.spoof_mac or cfg.spoof_hostname:
                     try:

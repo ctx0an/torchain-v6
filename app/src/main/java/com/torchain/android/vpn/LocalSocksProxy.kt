@@ -102,7 +102,13 @@ class LocalSocksProxy(
         running = true
         try {
             serverSocket = ServerSocket(localPort, 50, InetAddress.getByName("127.0.0.1"))
-            udpSocket = DatagramSocket(0, InetAddress.getByName("127.0.0.1"))
+            try {
+                udpSocket = DatagramSocket(0, InetAddress.getByName("127.0.0.1"))
+            } catch (e: Exception) {
+                try { serverSocket?.close() } catch (_: Exception) {}
+                serverSocket = null
+                throw e
+            }
             Logger.i("LocalSocksProxy", "Local SOCKS proxy started on port $localPort, UDP on ${udpSocket?.localPort} (maxConcurrent=$MAX_CONCURRENT)")
 
             thread(name = "socks-tcp-accept") {
@@ -114,6 +120,8 @@ class LocalSocksProxy(
             }
         } catch (e: Exception) {
             Logger.e("LocalSocksProxy", "Failed to start local SOCKS proxy", e)
+            running = false
+            throw e
         }
     }
 
@@ -151,7 +159,11 @@ class LocalSocksProxy(
     private fun acceptTcpConnections() {
         while (running) {
             try {
-                val client = serverSocket?.accept() ?: break
+                val ss = serverSocket
+                if (ss == null || ss.isClosed) {
+                    break
+                }
+                val client = ss.accept()
                 client.tcpNoDelay = true
 
                 var registered = false
@@ -197,6 +209,9 @@ class LocalSocksProxy(
             } catch (e: Exception) {
                 if (running) {
                     Logger.w("LocalSocksProxy", "Error accepting TCP connection: ${e.message}")
+                    try { Thread.sleep(100) } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                    }
                 }
             }
         }
@@ -263,7 +278,7 @@ class LocalSocksProxy(
                     addrBytes = ByteArray(1 + len)
                     addrBytes[0] = len.toByte()
                     System.arraycopy(domainBytes, 0, addrBytes, 1, len)
-                    destAddrLog = String(domainBytes)
+                    destAddrLog = String(domainBytes, Charsets.UTF_8)
                 }
                 0x04 -> { // IPv6
                     addrBytes = ByteArray(16)
@@ -313,7 +328,7 @@ class LocalSocksProxy(
                     tOut.write(byteArrayOf(0x05, 0x01, 0x00)); tOut.flush()
                     val g1 = tIn.read()
                     val g2 = tIn.read()
-                    if (g1 != 5 || g2 == 0xFF || g2 == -1) {
+                    if (g1 != 5 || g2 != 0x00) {
                         sendErrorResponse(output, 0x01) // general SOCKS server failure
                         closeSocket(torSocket)
                         return false
@@ -446,8 +461,7 @@ class LocalSocksProxy(
                 try {
                     val in1 = s1.getInputStream()
                     val out2 = s2.getOutputStream()
-                    val buf = ByteArray(8192)
-                    var len: Int
+                    val buf = ByteArray(32768)
                     while (true) {
                         val read = in1.read(buf)
                         if (read < 0) {
@@ -483,8 +497,7 @@ class LocalSocksProxy(
                 try {
                     val in2 = s2.getInputStream()
                     val out1 = s1.getOutputStream()
-                    val buf = ByteArray(8192)
-                    var len: Int
+                    val buf = ByteArray(32768)
                     while (true) {
                         val read = in2.read(buf)
                         if (read < 0) {
@@ -518,6 +531,9 @@ class LocalSocksProxy(
         val buffer = ByteArray(65535)
         while (running) {
             try {
+                if (socket.isClosed) {
+                    break
+                }
                 val packet = DatagramPacket(buffer, buffer.size)
                 socket.receive(packet)
 
@@ -535,6 +551,9 @@ class LocalSocksProxy(
             } catch (e: Exception) {
                 if (running) {
                     Logger.w("LocalSocksProxy", "Error receiving UDP packet: ${e.message}")
+                    try { Thread.sleep(100) } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                    }
                 }
             }
         }
@@ -617,9 +636,9 @@ class LocalSocksProxy(
 
     companion object {
         // Hard caps that prevent thread/fd explosion when many apps retry at once.
-        // 64 concurrent TCP relays × 2 pipe threads = 128 threads max, well within
-        // Android per-app thread limits, while still handling normal phone traffic.
-        private const val MAX_CONCURRENT = 64
-        private const val MAX_QUEUE = 128
+        // Increased concurrent TCP relays to 256 and queue to 512 for higher performance,
+        // allowing faster concurrent resource loads without socket rejection.
+        private const val MAX_CONCURRENT = 256
+        private const val MAX_QUEUE = 512
     }
 }

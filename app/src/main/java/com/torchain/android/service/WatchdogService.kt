@@ -89,12 +89,24 @@ class WatchdogService : LifecycleService() {
         const val NOTIF_ID = 2
 
         fun start(ctx: Context) {
-            val i = Intent(ctx, WatchdogService::class.java).setAction(ACTION_START)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(i)
-            else ctx.startService(i)
+            try {
+                val i = Intent(ctx, WatchdogService::class.java).setAction(ACTION_START)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(i)
+                else ctx.startService(i)
+            } catch (e: Exception) {
+                Logger.e("WatchdogService", "Failed to start WatchdogService: ${e.message}")
+            }
         }
         fun stop(ctx: Context) {
-            ctx.startService(Intent(ctx, WatchdogService::class.java).setAction(ACTION_STOP))
+            val i = Intent(ctx, WatchdogService::class.java).setAction(ACTION_STOP)
+            try {
+                ctx.startService(i)
+            } catch (e: IllegalStateException) {
+                // If app is in background, startService is blocked. Fall back to stopService directly
+                ctx.stopService(Intent(ctx, WatchdogService::class.java))
+            } catch (e: Exception) {
+                Logger.e("WatchdogService", "Failed to stop WatchdogService: ${e.message}")
+            }
         }
     }
 }

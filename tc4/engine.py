@@ -20,12 +20,13 @@ from . import firewall, platform as plat, spoof, torrc, watchdog
 from .config import Config
 from .errors import DependencyError, TorError
 from .log import get_logger
-from .sysutil import require_root, run, run_ok, which
+from .sysutil import ProcessLock, require_root, run, run_ok, which
 from .torctl import ControlClient, wait_bootstrap
 
 log = get_logger()
 
 _PIDFILE = os.path.join(RUN_DIR, "tor.pid")
+_LOCKFILE = os.path.join(RUN_DIR, "torchain.lock")
 _CANDIDATE_TOR_USERS = ("debian-tor", "tor", "_tor")
 
 
@@ -161,44 +162,48 @@ def _start_tor(cfg: Config, tor_user: str) -> int:
 
 def start(cfg: Config | None = None, *, on_progress=None, supervise: bool = True) -> Status:
     require_root()
-    cfg = cfg or config_mod.load()
-    tor_user = _detect_tor_user()
-    _ensure_dirs(tor_user)
-    log.debug("environment: %s", plat.describe())
-
-    started_tor = False
-    try:
-        if cfg.spoof_mac:
-            spoof.spoof_mac()
-        if cfg.spoof_hostname:
-            spoof.spoof_hostname()
-        if not _pid_alive(_read_pid()):
-            _start_tor(cfg, tor_user)
-            started_tor = True
-        ok = wait_bootstrap(timeout=60, on_progress=on_progress)
-        if not ok:
-            raise TorError("tor did not finish bootstrapping in time",
-                           hint="Check your connection or try bridges.")
-        firewall.up(cfg, tor_user)
-        cfg.active = True
-        config_mod.save(cfg)
-        if supervise and cfg.watchdog_enabled:
-            try:
-                watchdog.start_daemon()
-            except Exception as exc:  # noqa: BLE001
-                log.warning("watchdog could not start: %s", exc)
-        log.info("torchain is active")
-        return status(cfg)
-    except Exception:
-        log.error("start failed; rolling back")
+    with ProcessLock(_LOCKFILE):
+        cfg = cfg or config_mod.load()
+        tor_user = _detect_tor_user()
+        _ensure_dirs(tor_user)
+        log.debug("environment: %s", plat.describe())
+    
+        started_tor = False
         try:
-            firewall.down(cfg, quiet=True)
-        finally:
-            if started_tor:
-                _stop_tor()
-            if cfg.spoof_mac or cfg.spoof_hostname:
-                spoof.restore()
-        raise
+            if cfg.spoof_mac:
+                spoof.spoof_mac()
+            if cfg.spoof_hostname:
+                spoof.spoof_hostname()
+                
+            # Apply firewall first so we are fail-closed during bootstrap!
+            firewall.up(cfg, tor_user)
+            
+            if not _pid_alive(_read_pid()):
+                _start_tor(cfg, tor_user)
+                started_tor = True
+            ok = wait_bootstrap(timeout=60, on_progress=on_progress)
+            if not ok:
+                raise TorError("tor did not finish bootstrapping in time",
+                               hint="Check your connection or try bridges.")
+            cfg.active = True
+            config_mod.save(cfg)
+            if supervise and cfg.watchdog_enabled:
+                try:
+                    watchdog.start_daemon()
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("watchdog could not start: %s", exc)
+            log.info("torchain is active")
+            return status(cfg)
+        except Exception:
+            log.error("start failed; rolling back")
+            try:
+                firewall.down(cfg, quiet=True)
+            finally:
+                if started_tor:
+                    _stop_tor()
+                if cfg.spoof_mac or cfg.spoof_hostname:
+                    spoof.restore()
+            raise
 
 
 def _stop_tor() -> None:
@@ -222,31 +227,32 @@ def _stop_tor() -> None:
 
 def stop(cfg: Config | None = None) -> Status:
     require_root()
-    cfg = cfg or config_mod.load()
-    # Stop the watchdog first so it doesn't try to revive tor.
-    try:
-        watchdog.stop_daemon()
-    except Exception as exc:  # noqa: BLE001
-        log.debug("watchdog stop: %s", exc)
-    # Tear down in a finally-chain so a crash in any single step can NEVER
-    # leave the machine with traffic blocked. Connectivity (the firewall) is
-    # always restored first, even if stopping tor or restoring the identity
-    # later raises.
-    try:
-        firewall.down(cfg)
-    finally:
+    with ProcessLock(_LOCKFILE):
+        cfg = cfg or config_mod.load()
+        # Stop the watchdog first so it doesn't try to revive tor.
         try:
-            _stop_tor()
+            watchdog.stop_daemon()
+        except Exception as exc:  # noqa: BLE001
+            log.debug("watchdog stop: %s", exc)
+        # Tear down in a finally-chain so a crash in any single step can NEVER
+        # leave the machine with traffic blocked. Connectivity (the firewall) is
+        # always restored first, even if stopping tor or restoring the identity
+        # later raises.
+        try:
+            firewall.down(cfg)
         finally:
-            if cfg.spoof_mac or cfg.spoof_hostname:
-                try:
-                    spoof.restore()
-                except Exception as exc:  # noqa: BLE001
-                    log.warning("identity restore failed: %s", exc)
-    cfg.active = False
-    config_mod.save(cfg)
-    log.info("torchain stopped")
-    return status(cfg)
+            try:
+                _stop_tor()
+            finally:
+                if cfg.spoof_mac or cfg.spoof_hostname:
+                    try:
+                        spoof.restore()
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("identity restore failed: %s", exc)
+        cfg.active = False
+        config_mod.save(cfg)
+        log.info("torchain stopped")
+        return status(cfg)
 
 
 def restart(cfg: Config | None = None, *, on_progress=None) -> Status:
@@ -282,9 +288,7 @@ def status(cfg: Config | None = None) -> Status:
     )
 
 
-def panic() -> None:
-    """Emergency kill switch: drop ALL traffic except loopback, stop tor."""
-    require_root()
+def _panic() -> None:
     try:
         watchdog.stop_daemon()
     except Exception:  # noqa: BLE001
@@ -297,28 +301,42 @@ def panic() -> None:
     if which("ip6tables"):
         for pol in ("OUTPUT", "INPUT", "FORWARD"):
             run_ok(["ip6tables", "-P", pol, "DROP"])
+        run_ok(["ip6tables", "-A", "OUTPUT", "-o", "lo", "-j", "ACCEPT"])
+        run_ok(["ip6tables", "-A", "INPUT", "-i", "lo", "-j", "ACCEPT"])
     _stop_tor()
-    log.warning("PANIC engaged: all non-loopback traffic blocked")
+
+
+def panic() -> None:
+    """Emergency kill switch: drop ALL traffic except loopback, stop tor."""
+    require_root()
+    with ProcessLock(_LOCKFILE):
+        _panic()
+        log.warning("PANIC engaged: all non-loopback traffic blocked")
 
 
 def panic_disarm() -> None:
     require_root()
-    if which("iptables"):
-        for pol in ("OUTPUT", "INPUT", "FORWARD"):
-            run_ok(["iptables", "-P", pol, "ACCEPT"])
-        run_ok(["iptables", "-F"])
-    if which("ip6tables"):
-        for pol in ("OUTPUT", "INPUT", "FORWARD"):
-            run_ok(["ip6tables", "-P", pol, "ACCEPT"])
-    log.info("panic disarmed")
+    with ProcessLock(_LOCKFILE):
+        if which("iptables"):
+            for pol in ("OUTPUT", "INPUT", "FORWARD"):
+                run_ok(["iptables", "-P", pol, "ACCEPT"])
+            run_ok(["iptables", "-D", "OUTPUT", "-o", "lo", "-j", "ACCEPT"])
+            run_ok(["iptables", "-D", "INPUT", "-i", "lo", "-j", "ACCEPT"])
+        if which("ip6tables"):
+            for pol in ("OUTPUT", "INPUT", "FORWARD"):
+                run_ok(["ip6tables", "-P", pol, "ACCEPT"])
+            run_ok(["ip6tables", "-D", "OUTPUT", "-o", "lo", "-j", "ACCEPT"])
+            run_ok(["ip6tables", "-D", "INPUT", "-i", "lo", "-j", "ACCEPT"])
+        log.info("panic disarmed")
 
 
 def repair_internet() -> str:
     """Force-restore normal networking. Backs the GUI "Repair Internet" button
     and the ``torchain repair`` command. See :mod:`tc4.netfix`."""
     require_root()
-    from . import netfix
-    return netfix.repair()
+    with ProcessLock(_LOCKFILE):
+        from . import netfix
+        return netfix.repair()
 
 
 def pandora() -> str:
@@ -336,59 +354,60 @@ def pandora() -> str:
     ``torchain panic disarm``.
     """
     require_root()
-    report: list[str] = []
-
-    try:
-        watchdog.stop_daemon()
-    except Exception:  # noqa: BLE001
-        pass
-
-    try:
-        panic()
-        report.append("kill-switch engaged (all traffic blocked)")
-    except Exception as exc:  # noqa: BLE001
-        report.append(f"kill-switch error: {exc}")
-
-    # Securely wipe sensitive state.
-    targets = [
-        os.path.join(DATA_DIR, "tor"),
-        os.path.join(DATA_DIR, "spoof_state.json"),
-        LOG_DIR,
-    ]
-    shred = which("shred")
-    wiped = 0
-    for path in targets:
-        if not os.path.exists(path):
-            continue
-        if os.path.isfile(path):
-            files = [path]
-        else:
-            files = [os.path.join(b, n) for b, _d, ns in os.walk(path) for n in ns]
-        for fp in files:
-            if shred:
-                run_ok([shred, "-u", "-z", "-n", "3", fp])
-            try:
-                if os.path.exists(fp):
-                    os.remove(fp)
-            except OSError:
-                pass
-        wiped += 1
-    report.append(f"wiped {wiped} sensitive path(s)")
-
-    # Scrub volatile memory traces.
-    try:
-        run_ok(["sync"])
-        with open("/proc/sys/vm/drop_caches", "w", encoding="ascii") as fh:
-            fh.write("3\n")
-        report.append("dropped page cache / dentries / inodes")
-    except OSError as exc:
-        report.append(f"cache drop skipped: {exc}")
-
-    if which("swapoff") and which("swapon"):
-        if run_ok(["swapoff", "-a"], timeout=120):
-            run_ok(["swapon", "-a"], timeout=120)
-            report.append("swap scrubbed (off/on cycle)")
-
-    msg = "; ".join(report)
-    log.warning("PANDORA detonated: %s", msg)
-    return msg
+    with ProcessLock(_LOCKFILE):
+        report: list[str] = []
+    
+        try:
+            watchdog.stop_daemon()
+        except Exception:  # noqa: BLE001
+            pass
+    
+        try:
+            _panic()
+            report.append("kill-switch engaged (all traffic blocked)")
+        except Exception as exc:  # noqa: BLE001
+            report.append(f"kill-switch error: {exc}")
+    
+        # Securely wipe sensitive state.
+        targets = [
+            os.path.join(DATA_DIR, "tor"),
+            os.path.join(DATA_DIR, "spoof_state.json"),
+            LOG_DIR,
+        ]
+        shred = which("shred")
+        wiped = 0
+        for path in targets:
+            if not os.path.exists(path):
+                continue
+            if os.path.isfile(path):
+                files = [path]
+            else:
+                files = [os.path.join(b, n) for b, _d, ns in os.walk(path) for n in ns]
+            for fp in files:
+                if shred:
+                    run_ok([shred, "-u", "-z", "-n", "3", fp])
+                try:
+                    if os.path.exists(fp):
+                        os.remove(fp)
+                except OSError:
+                    pass
+            wiped += 1
+        report.append(f"wiped {wiped} sensitive path(s)")
+    
+        # Scrub volatile memory traces.
+        try:
+            run_ok(["sync"])
+            with open("/proc/sys/vm/drop_caches", "w", encoding="ascii") as fh:
+                fh.write("3\n")
+            report.append("dropped page cache / dentries / inodes")
+        except OSError as exc:
+            report.append(f"cache drop skipped: {exc}")
+    
+        if which("swapoff") and which("swapon"):
+            if run_ok(["swapoff", "-a"], timeout=120):
+                run_ok(["swapon", "-a"], timeout=120)
+                report.append("swap scrubbed (off/on cycle)")
+    
+        msg = "; ".join(report)
+        log.warning("PANDORA detonated: %s", msg)
+        return msg

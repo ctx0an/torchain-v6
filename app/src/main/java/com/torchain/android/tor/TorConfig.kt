@@ -37,10 +37,9 @@ object TorConfig {
         add("AutomapHostsOnResolve 1")
         add("AutomapHostsSuffixes .onion,.exit")
         add("LearnCircuitBuildTimeout 1")
-        add("CircuitBuildTimeout 30")
-        add("NumEntryGuards 4")
-        add("KeepalivePeriod 60")
-        add("NewCircuitPeriod 30")
+        add("NumEntryGuards 1")
+        add("KeepalivePeriod 120")
+        add("MaxCircuitDirtiness 600")
         add("Log notice file ${File(dataDir, "notice.log").absolutePath}")
         add("Log notice stdout")
         if (c.blockIpv6) {
@@ -54,13 +53,16 @@ object TorConfig {
         }
         geoipFile?.let { if (it.exists()) add("GeoIPFile ${it.absolutePath}") }
         geoip6File?.let { if (it.exists()) add("GeoIPv6File ${it.absolutePath}") }
-        if (c.bridgesEnabled && c.bridgeTransport != "vanilla") {
+        if (c.bridgesEnabled) {
             add("UseBridges 1")
             val t = c.bridgeTransport
-            val tpName = if (t == "snowflake") "snowflake" else if (t == "custom") "obfs4" else t
-            val ptPort = ptPorts[tpName]
-            if (ptPort != null && ptPort > 0) {
-                add("ClientTransportPlugin $tpName socks5 127.0.0.1:$ptPort")
+            if (t != "vanilla") {
+                val tpName = if (t == "snowflake") "snowflake" else if (t == "custom") "obfs4" else t
+                val ptLookupKey = if (t == "snowflake") "snowflake" else "obfs4"
+                val ptPort = ptPorts[ptLookupKey]
+                if (ptPort != null && ptPort > 0) {
+                    add("ClientTransportPlugin $tpName socks5 127.0.0.1:$ptPort")
+                }
             }
             if (t == "snowflake") {
                 add("Bridge snowflake 192.0.2.3:80 2B280B23E1107BB62ABFC40DDCC8824814F80A72 fingerprint=2B280B23E1107BB62ABFC40DDCC8824814F80A72 url=https://snowflake-broker.torproject.net/ front=ajax.aspnetcdn.com ice=stun:stun.l.google.com:19302,stun:stun.antisip.com:3478,stun:stun.bluesip.net:3478")

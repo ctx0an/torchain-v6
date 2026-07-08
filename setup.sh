@@ -68,8 +68,7 @@ migrate_and_install() {
   for u in debian-tor tor _tor; do id "$u" >/dev/null 2>&1 && toruser="$u" && break; done
   chown -R "$toruser:$toruser" /var/lib/torchain/tor || true
   chmod 700 /var/lib/torchain/tor
-  # Ensure torchain is on sudo's secure_path (/usr/bin).
-  if [ -f /usr/share/torchain/torchain ] && [ ! -L /usr/bin/torchain ]; then
+  if [ -f /usr/share/torchain/torchain ]; then
     ln -sf /usr/share/torchain/torchain /usr/bin/torchain 2>/dev/null || true
   fi
 }

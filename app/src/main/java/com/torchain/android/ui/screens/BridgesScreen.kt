@@ -55,7 +55,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun BridgesScreen() {
     val context = LocalContext.current
-    val cfg by Config.flow(context).collectAsState(initial = TorchainConfig())
+    val configFlow = remember(context) { Config.flow(context) }
+    val cfg by configFlow.collectAsState(initial = TorchainConfig())
     val scope = rememberCoroutineScope()
     var newBridge by remember { mutableStateOf("") }
     val testingBridges: SnapshotStateMap<String, Boolean> = remember { mutableStateMapOf() }
@@ -145,12 +146,18 @@ fun BridgesScreen() {
         ) {
             Button(
                 onClick = {
-                    if (newBridge.isNotBlank()) {
-                        scope.launch {
-                            Config.set(context) {
-                                it.copy(bridgeLines = it.bridgeLines + newBridge.trim())
+                    val trimmed = newBridge.trim()
+                    if (trimmed.isNotBlank()) {
+                        val parsed = BridgeManager.parse(trimmed)
+                        if (parsed == null) {
+                            message = "Invalid bridge line format. Expected: <transport> <ip>:<port> [fingerprint] ..."
+                        } else {
+                            scope.launch {
+                                Config.set(context) {
+                                    it.copy(bridgeLines = (it.bridgeLines + parsed.line).distinct())
+                                }
+                                newBridge = ""; message = "Bridge added"
                             }
-                            newBridge = ""; message = "Bridge added"
                         }
                     }
                 },
@@ -237,6 +244,8 @@ fun BridgesScreen() {
                                     Config.set(context) {
                                         it.copy(bridgeLines = it.bridgeLines.filter { x -> x != line })
                                     }
+                                    testResults.remove(line)
+                                    testingBridges.remove(line)
                                 }
                             },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = KaliMagenta)

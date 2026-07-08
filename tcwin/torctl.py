@@ -241,11 +241,16 @@ class ControlClient:
 
 
 def wait_bootstrap(timeout: float = 60.0, poll: float = 0.5,
-                   on_progress=None) -> bool:
+                   on_progress=None, check_pid: int | None = None) -> bool:
     """Block until tor reports 100% bootstrap or timeout. Returns success."""
     deadline = time.time() + timeout
     last = -1
     while time.time() < deadline:
+        if check_pid is not None:
+            from .sysutil import pid_alive
+            if not pid_alive(check_pid):
+                log.warning("tor process %s died during bootstrap", check_pid)
+                return False
         try:
             with ControlClient() as c:
                 pct = c.bootstrap_progress()

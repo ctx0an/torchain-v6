@@ -129,7 +129,12 @@ def cmd_leaktest(args) -> int:
 def cmd_config(args) -> int:
     cfg = config_mod.load()
     if args.set:
-        key, _, value = args.set.partition("=")
+        key, eq, value = args.set.partition("=")
+        if not eq:
+            raise TorChainError(
+                f"invalid config format '{args.set}'",
+                hint="Expected KEY=VALUE, e.g. 'torchain config --set exit_country=US'",
+            )
         key = key.strip()
         _WRITABLE_KEYS = {
             "exit_country", "block_ipv6", "use_bridges", "bridge_type",

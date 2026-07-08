@@ -51,25 +51,25 @@ def up(cfg: Config, tor_exe: str) -> None:
     down(cfg, quiet=True)
     try:
         # Make sure the firewall itself is on.
-        _netsh("set", "allprofiles", "state", "on", check=False)
-        # Allow tor.exe outbound on every profile.
+        _netsh("set", "allprofiles", "state", "on", check=True)
+        # Allow tor.exe outbound on every profile. Quote the path to support spaces.
         run(["netsh", "advfirewall", "firewall", "add", "rule",
              f"name={_RULE_TOR}", "dir=out", "action=allow",
-             f"program={tor_exe}", "enable=yes", "profile=any"],
-            check=False, timeout=20)
+             f'program="{tor_exe}"', "enable=yes", "profile=any"],
+            check=True, timeout=20)
         # Allow loopback so SOCKS clients can reach tor on 127.0.0.1.
         run(["netsh", "advfirewall", "firewall", "add", "rule",
              f"name={_RULE_LOOPBACK}", "dir=out", "action=allow",
              "remoteip=127.0.0.0/8", "enable=yes", "profile=any"],
-            check=False, timeout=20)
+            check=True, timeout=20)
         if cfg.block_ipv6:
             # Belt-and-suspenders: explicitly block all IPv6 egress.
             run(["netsh", "advfirewall", "firewall", "add", "rule",
                  f"name={_RULE_BLOCK6}", "dir=out", "action=block",
                  "remoteip=::/0", "enable=yes", "profile=any"],
-                check=False, timeout=20)
+                check=True, timeout=20)
         # Flip the default outbound policy to block (fail-closed).
-        _set_policy("blockoutbound")
+        _netsh("set", "allprofiles", "firewallpolicy", "blockinbound,blockoutbound", check=True)
     except Exception as exc:  # noqa: BLE001
         down(cfg, quiet=True)
         if isinstance(exc, FirewallError):
@@ -89,9 +89,42 @@ def down(cfg: Config | None = None, quiet: bool = False) -> None:
 
 
 def is_active() -> bool:
-    """True when our tor allow-rule exists (i.e. the kill-switch is engaged)."""
-    return run_ok(["netsh", "advfirewall", "firewall", "show", "rule",
-                   f"name={_RULE_TOR}"])
+    """True when the tor allow-rule is active and default outbound is blocked.
+
+    Tries reading from the registry without elevation first, falling back to netsh.
+    """
+    try:
+        import winreg
+        rule_found = False
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            r"SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\FirewallRules",
+                            0, winreg.KEY_READ) as k:
+            i = 0
+            while True:
+                try:
+                    name, value, typ = winreg.EnumValue(k, i)
+                    if isinstance(value, str) and "|Name=torchain-allow-tor|" in value:
+                        if "Active=TRUE" in value:
+                            rule_found = True
+                            break
+                    i += 1
+                except OSError:
+                    break
+        if not rule_found:
+            return False
+
+        # Verify default outbound policy is indeed block on all profiles
+        for profile in ("DomainProfile", "PublicProfile", "StandardProfile"):
+            path = rf"SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\{profile}"
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path, 0, winreg.KEY_READ) as k:
+                val, typ = winreg.QueryValueEx(k, "DefaultOutboundAction")
+                if val != 1:
+                    return False
+        return True
+    except Exception:
+        # Fallback to netsh if registry access fails
+        return run_ok(["netsh", "advfirewall", "firewall", "show", "rule",
+                       f"name={_RULE_TOR}"])
 
 
 def block_all() -> None:

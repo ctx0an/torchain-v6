@@ -20,17 +20,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.torchain.android.data.CircuitInfo
 import com.torchain.android.data.TorState
+import com.torchain.android.service.TorService
 import com.torchain.android.ui.components.PillStatus
 import com.torchain.android.ui.components.StatusPill
 import com.torchain.android.ui.theme.KaliAccent
@@ -42,15 +43,21 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun CircuitsScreen() {
+    val context = LocalContext.current
     val status by TorStatusBus.status.collectAsState()
-    val circuits = remember { mutableStateListOf<CircuitInfo>() }
     var refreshing by remember { mutableStateOf(false) }
 
     LaunchedEffect(status.state) {
         while (status.state is TorState.Running) {
-            val cs = status.circuits
-            circuits.clear(); circuits.addAll(cs)
+            TorService.refreshCircuits(context)
             delay(5000)
+        }
+    }
+
+    LaunchedEffect(refreshing) {
+        if (refreshing) {
+            delay(1000)
+            refreshing = false
         }
     }
 
@@ -70,16 +77,20 @@ fun CircuitsScreen() {
                     color = KaliTextSecondary)
             }
             StatusPill(
-                text = "${circuits.size} active",
-                status = if (circuits.isEmpty()) PillStatus.NEUTRAL else PillStatus.ACCENT)
+                text = "${status.circuits.size} active",
+                status = if (status.circuits.isEmpty()) PillStatus.NEUTRAL else PillStatus.ACCENT)
         }
 
         OutlinedButton(
-            onClick = { refreshing = true; },
+            onClick = {
+                refreshing = true
+                TorService.refreshCircuits(context)
+            },
+            enabled = status.state is TorState.Running && !refreshing,
             modifier = Modifier.fillMaxWidth().height(48.dp)
         ) { Text(if (refreshing) "REFRESHING..." else "REFRESH NOW") }
 
-        if (circuits.isEmpty()) {
+        if (status.circuits.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize()
                     .clip(RoundedCornerShape(8.dp))
@@ -93,7 +104,7 @@ fun CircuitsScreen() {
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(circuits) { c -> CircuitRow(c) }
+                items(status.circuits) { c -> CircuitRow(c) }
             }
         }
     }

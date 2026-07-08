@@ -22,8 +22,13 @@ pkg install -y tor privoxy iproute2
 
 # 2. Determine local IP address
 echo -e "\n[*] Detecting network interfaces..."
-# Extract the active local IP address (excluding loopback)
-LOCAL_IP=$(ip -o -4 addr show | awk '{print $4}' | cut -d/ -f1 | grep -v '127.0.0.1' | head -n 1)
+LOCAL_IP=""
+if command -v python3 >/dev/null 2>&1; then
+    LOCAL_IP=$(python3 -c "import socket; s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect(('8.8.8.8', 80)); print(s.getsockname()[0]); s.close()" 2>/dev/null)
+fi
+if [ -z "$LOCAL_IP" ]; then
+    LOCAL_IP=$(ip -o -4 addr show | awk '{print $4}' | cut -d/ -f1 | grep -v '127.0.0.1' | head -n 1)
+fi
 
 if [ -z "$LOCAL_IP" ]; then
     echo -e "${RED}[!] Warning: Could not auto-detect local IP address. Are you connected to Wi-Fi?${NC}"

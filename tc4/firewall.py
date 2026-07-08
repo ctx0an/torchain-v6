@@ -102,6 +102,8 @@ def _block_ipv6() -> None:
     _ipt6("-P", "OUTPUT", "DROP", check=False)
     _ipt6("-P", "INPUT", "DROP", check=False)
     _ipt6("-P", "FORWARD", "DROP", check=False)
+    _ipt6("-A", "INPUT", "-i", "lo", "-j", "ACCEPT", check=False)
+    _ipt6("-A", "OUTPUT", "-o", "lo", "-j", "ACCEPT", check=False)
 
 
 def _del_all_jumps(table: str, chain: str) -> None:
@@ -138,6 +140,8 @@ def down(cfg: Config, quiet: bool = False) -> None:
     if which("ip6tables"):
         for pol in ("OUTPUT", "INPUT", "FORWARD"):
             run_ok(["ip6tables", "-P", pol, "ACCEPT"])
+        run_ok(["ip6tables", "-D", "INPUT", "-i", "lo", "-j", "ACCEPT"])
+        run_ok(["ip6tables", "-D", "OUTPUT", "-o", "lo", "-j", "ACCEPT"])
     if not quiet:
         log.debug("firewall rules removed")
 

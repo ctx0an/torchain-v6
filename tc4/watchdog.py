@@ -39,7 +39,13 @@ def _alive(pid) -> bool:
         return False
     try:
         os.kill(pid, 0)
-        return True
+    except OSError:
+        return False
+    # Verify the PID belongs to torchain/watchdog to avoid PID recycling bugs.
+    try:
+        with open(f"/proc/{pid}/cmdline", "r", encoding="utf-8", errors="replace") as fh:
+            cmdline = fh.read()
+            return "torchain" in cmdline or "watchdog" in cmdline or "tc4" in cmdline
     except OSError:
         return False
 
@@ -66,9 +72,11 @@ def _daemonize() -> None:
         logfd = os.open(WATCHDOG_LOG, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o640)
         os.dup2(logfd, 1)
         os.dup2(logfd, 2)
+        os.close(logfd)
     except OSError:
         os.dup2(devnull, 1)
         os.dup2(devnull, 2)
+    os.close(devnull)
 
 
 def start_daemon() -> bool:

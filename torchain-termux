@@ -268,7 +268,7 @@ cmd_rotate() {
     die "Control port cookie file not found at $cookie_path"
   fi
   
-  local cookie_hex; cookie_hex=$(od -An -tx1 -v "$cookie_path" | tr -d ' \n')
+  local cookie_hex; cookie_hex=$(python3 -c "print(open('$cookie_path','rb').read().hex())" 2>/dev/null || od -An -tx1 -v "$cookie_path" | tr -d ' \n')
   
   # Use Bash built-in TCP socket to communicate with Tor control port (no netcat/nc needed!)
   if exec 3<>/dev/tcp/127.0.0.1/9051; then

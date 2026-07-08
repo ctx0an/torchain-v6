@@ -16,8 +16,8 @@ set -uo pipefail
 
 C_BLUE=$'\033[38;5;39m'; C_GREEN=$'\033[38;5;47m'; C_RED=$'\033[38;5;203m'
 C_AMBER=$'\033[38;5;214m'; C_RST=$'\033[0m'
-info() { echo "${C_BLUE}\u2192${C_RST} $*"; }
-ok()   { echo "${C_GREEN}\u2713${C_RST} $*"; }
+info() { echo "${C_BLUE}→${C_RST} $*"; }
+ok()   { echo "${C_GREEN}✓${C_RST} $*"; }
 warn() { echo "${C_AMBER}!${C_RST} $*"; }
 
 DATA_DIR="${TORCHAIN_DATA_DIR:-/var/lib/torchain}"
@@ -34,7 +34,7 @@ if [ "$(id -u)" -ne 0 ]; then
   elif have pkexec; then
     exec pkexec bash "$0" "$@"
   else
-    echo "${C_RED}\u2717 run me as root: sudo ./internet.sh${C_RST}" >&2
+    echo "${C_RED}✗ run me as root: sudo ./internet.sh${C_RST}" >&2
     exit 1
   fi
 fi

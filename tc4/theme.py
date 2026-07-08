@@ -43,8 +43,34 @@ MONO = ("JetBrains Mono", "Hack", "DejaVu Sans Mono", "monospace")
 SANS = ("Inter", "Cantarell", "DejaVu Sans", "sans-serif")
 
 
+_cached_mono = None
+_cached_sans = None
+
+
+def _find_first_available(families_list: tuple[str, ...]) -> str:
+    try:
+        import tkinter as tk
+        import tkinter.font as tkfont
+        if tk._default_root is not None:
+            available = {f.lower() for f in tkfont.families()}
+            for f in families_list:
+                if f.lower() in available or f in ("monospace", "sans-serif"):
+                    return f
+    except Exception:
+        pass
+    return families_list[0]
+
+
 def font(size: int = 11, *, bold: bool = False, mono: bool = True):
-    family = MONO[0] if mono else SANS[0]
+    global _cached_mono, _cached_sans
+    if mono:
+        if _cached_mono is None:
+            _cached_mono = _find_first_available(MONO)
+        family = _cached_mono
+    else:
+        if _cached_sans is None:
+            _cached_sans = _find_first_available(SANS)
+        family = _cached_sans
     return (family, size, "bold") if bold else (family, size)
 
 

@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,7 +57,8 @@ import com.torchain.android.util.TorStatusBus
 fun DashboardScreen() {
     val context = LocalContext.current
     val status by TorStatusBus.status.collectAsState()
-    val cfg by Config.flow(context).collectAsState(initial = TorchainConfig())
+    val configFlow = remember(context) { Config.flow(context) }
+    val cfg by configFlow.collectAsState(initial = TorchainConfig())
     val isSocks5 = cfg.proxyMode == "socks5"
 
     val vpnLauncher = rememberLauncherForActivityResult(

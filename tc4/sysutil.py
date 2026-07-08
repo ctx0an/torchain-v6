@@ -6,13 +6,14 @@ get actionable messages instead of opaque tracebacks.
 """
 from __future__ import annotations
 
+import fcntl
 import os
 import shutil
 import subprocess
 import sys
 from typing import Sequence
 
-from .errors import CommandError, DependencyError, PrivilegeError, TimeoutError_
+from .errors import CommandError, DependencyError, PrivilegeError, TimeoutError_, TorChainError
 from .log import get_logger
 
 log = get_logger()
@@ -32,24 +33,72 @@ def require_binaries(*binaries: str) -> None:
 
 
 def is_root() -> bool:
-    return os.geteuid() == 0
+    try:
+        return os.geteuid() == 0
+    except AttributeError:
+        import ctypes
+        try:
+            return ctypes.windll.shell32.IsUserAnAdmin() != 0
+        except Exception:
+            return False
 
 
 def require_root() -> None:
     if is_root():
         return
     # Auto-elevation: try desktop polkit first (shows a GUI auth dialog),
-    # then fall back to the error message.
+    # then fall back to sudo, and finally to the error message.
     display = os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
     pkexec = shutil.which("pkexec")
+    
+    # If the current script is a python file, run it with the interpreter
+    base_args = [sys.executable] + sys.argv if sys.argv[0].endswith(".py") else sys.argv
+    
     if pkexec and display:
-        argv = ["pkexec"] + sys.argv
+        argv = ["pkexec"] + base_args
         os.execvp(pkexec, argv)
         # never returns
+        
+    sudo = shutil.which("sudo")
+    if sudo:
+        argv = ["sudo"] + base_args
+        os.execvp(sudo, argv)
+        # never returns
+        
     raise PrivilegeError(
         "this operation requires root privileges",
         hint="Re-run with sudo, e.g. 'sudo torchain start'.",
     )
+
+
+class ProcessLock:
+    """A cross-process mutual exclusion lock using fcntl.flock."""
+    def __init__(self, path: str):
+        self.path = path
+        self._fd = None
+
+    def __enter__(self) -> ProcessLock:
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        self._fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            os.close(self._fd)
+            self._fd = None
+            raise TorChainError(
+                "Another torchain operation is in progress.",
+                hint="Wait for the other process to finish."
+            ) from exc
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._fd is not None:
+            try:
+                fcntl.flock(self._fd, fcntl.LOCK_UN)
+            except OSError:
+                pass
+            os.close(self._fd)
+            self._fd = None
 
 
 def run(

@@ -141,17 +141,80 @@ def elevate(args: Sequence[str], *, wait: bool = False) -> bool:
     """
     python = sys.executable or "python"
     params = "-m tcwin " + " ".join(_quote(a) for a in args)
+
+    import ctypes.wintypes as w
+
+    class SHELLEXECUTEINFOW(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", w.DWORD),
+            ("fMask", w.ULONG),
+            ("hwnd", w.HWND),
+            ("lpVerb", w.LPCWSTR),
+            ("lpFile", w.LPCWSTR),
+            ("lpParameters", w.LPCWSTR),
+            ("lpDirectory", w.LPCWSTR),
+            ("nShow", ctypes.c_int),
+            ("hInstApp", w.HANDLE),
+            ("lpIDList", ctypes.c_void_p),
+            ("lpClass", w.LPCWSTR),
+            ("hkeyClass", w.HANDLE),
+            ("dwHotKey", w.DWORD),
+            ("hIconOrMonitor", w.HANDLE),
+            ("hProcess", w.HANDLE)
+        ]
+
+    SEE_MASK_NOCLOSEPROCESS = 0x00000040
     SW_HIDE = 0
+
+    sei = SHELLEXECUTEINFOW()
+    sei.cbSize = ctypes.sizeof(SHELLEXECUTEINFOW)
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS if wait else 0
+    sei.hwnd = None
+    sei.lpVerb = "runas"
+    sei.lpFile = python
+    sei.lpParameters = params
+    sei.lpDirectory = None
+    sei.nShow = SW_HIDE
+
     try:
-        rc = ctypes.windll.shell32.ShellExecuteW(None, "runas", python, params, None, SW_HIDE)
-        return int(rc) > 32
+        success = ctypes.windll.shell32.ShellExecuteExW(ctypes.byref(sei))
+        if not success:
+            return False
+        if int(sei.hInstApp or 0) <= 32:
+            return False
+        if wait and sei.hProcess:
+            INFINITE = 0xFFFFFFFF
+            ctypes.windll.kernel32.WaitForSingleObject(sei.hProcess, INFINITE)
+            ctypes.windll.kernel32.CloseHandle(sei.hProcess)
+        return True
     except Exception as exc:  # noqa: BLE001
         log.error("elevation failed: %s", exc)
         return False
 
 
 def _quote(arg: str) -> str:
-    return f'"{arg}"' if (" " in arg or not arg) else arg
+    """Quote an argument for CommandLineToArgvW rules on Windows."""
+    if not arg:
+        return '""'
+    if not any(c in arg for c in ' \t\n\v"'):
+        return arg
+    res = []
+    bs_count = 0
+    for c in arg:
+        if c == '\\':
+            bs_count += 1
+        elif c == '"':
+            res.append('\\' * (bs_count * 2 + 1))
+            res.append('"')
+            bs_count = 0
+        else:
+            if bs_count > 0:
+                res.append('\\' * bs_count)
+                bs_count = 0
+            res.append(c)
+    if bs_count > 0:
+        res.append('\\' * bs_count)
+    return '"' + ''.join(res) + '"'
 
 
 # Tuple of swallowable errors for run_ok.

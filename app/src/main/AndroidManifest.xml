@@ -64,7 +64,7 @@
              establish() runs — that was why the VPN never came up. -->
         <service
             android:name=".vpn.TorVpnService"
-            android:exported="false"
+            android:exported="true"
             android:permission="android.permission.BIND_VPN_SERVICE">
             <intent-filter>
                 <action android:name="android.net.VpnService" />

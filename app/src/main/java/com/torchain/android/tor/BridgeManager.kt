@@ -20,6 +20,9 @@ object BridgeManager {
         if (trimmed.isEmpty()) return null
         val parts = trimmed.split(' ', limit = 2)
         val transport = parts[0]
+        if (transport.contains(':')) {
+            return Bridge(transport = "vanilla", line = trimmed)
+        }
         val rest = parts.getOrNull(1) ?: return null
         if (!rest.split(' ').first().contains(':')) return null
         return Bridge(transport = transport, line = trimmed)
@@ -146,8 +149,9 @@ object BridgeManager {
                     false to -1L
                 }
             } else {
-                val rest = parsed.line.split(' ').getOrNull(1) ?: return@withContext false to -1L
-                val hp = rest.split(' ').first().split(':')
+                val words = parsed.line.split(' ').filter { it.isNotBlank() }
+                val hostPortStr = words.firstOrNull { it.contains(':') } ?: return@withContext false to -1L
+                val hp = hostPortStr.split(':')
                 val host = hp.getOrNull(0) ?: return@withContext false to -1L
                 val port = hp.getOrNull(1)?.toIntOrNull() ?: return@withContext false to -1L
                 val start = System.currentTimeMillis()

@@ -415,34 +415,50 @@ class TorChainGUI:
 
     def _test_bridges(self):
         from . import bridges as b
+        if getattr(self, "_testing_bridges", False):
+            return
+        self._testing_bridges = True
         def _work():
             try:
                 results = b.test_bridges(cfg=self.cfg)
                 alive = sum(1 for _, ok, _ in results if ok)
                 lines = [f"{'✓' if ok else '✗'} {info}" for _, ok, info in results]
                 report = f"{alive}/{len(results)} bridges reachable\n" + "\n".join(lines)
-                self.root.after(0, lambda: self._notify(report))
+                self.root.after(0, lambda: self._test_bridges_done(report))
             except TorChainError as exc:
                 err_msg = str(exc)
-                self.root.after(0, lambda: self._notify(err_msg))
+                self.root.after(0, lambda: self._test_bridges_done(err_msg))
         self._notify("Testing bridges...")
         threading.Thread(target=_work, daemon=True).start()
 
+    def _test_bridges_done(self, report):
+        self._testing_bridges = False
+        self._notify(report)
+
     def _fetch_bridges(self):
         from . import bridges as b
+        if getattr(self, "_fetching_bridges", False):
+            return
+        self._fetching_bridges = True
         def _work():
             try:
-                self.cfg = b.append_fetched(cfg=self.cfg)
-                self.root.after(0, self._fetch_done)
+                new_cfg = b.append_fetched(cfg=self.cfg)
+                self.root.after(0, lambda: self._fetch_done(new_cfg))
             except TorChainError as exc:
-                err_msg = str(exc)
-                self.root.after(0, lambda: self._notify(err_msg))
+                err_val = exc
+                self.root.after(0, lambda: self._fetch_failed(err_val))
         self._notify("Fetching bridges from Tor Project...")
         threading.Thread(target=_work, daemon=True).start()
 
-    def _fetch_done(self):
+    def _fetch_done(self, new_cfg):
+        self._fetching_bridges = False
+        self.cfg = new_cfg
         self._refresh_bridges()
         self.sub_status.configure(text="Bridges fetched from Tor Project.", fg=P.ok)
+
+    def _fetch_failed(self, exc):
+        self._fetching_bridges = False
+        self._notify(exc)
 
     def _refresh_bridges(self):
         self.bridge_tree.delete(*self.bridge_tree.get_children())
@@ -760,6 +776,7 @@ class TorChainGUI:
             if want_boot != self.cfg.start_on_boot:
                 from . import boot
                 boot.enable() if want_boot else boot.disable()
+                self.cfg.start_on_boot = want_boot
             self.sub_status.configure(text="Settings saved.", fg=P.ok)
         except TorChainError as exc:
             self._notify(exc)

@@ -93,26 +93,33 @@ run_gui_elevated() {
 
   # 1) pkexec: a true graphical prompt that works when launched from a menu.
   if command -v pkexec >/dev/null 2>&1; then
-    exec pkexec /usr/bin/env DISPLAY="$disp" XAUTHORITY="$xa" \
-      PYTHONPATH="$APP_DIR" "$PYBIN" -m tc4 gui
+    if pkexec /usr/bin/env DISPLAY="$disp" XAUTHORITY="$xa" \
+      PYTHONPATH="$APP_DIR" "$PYBIN" -m tc4 gui; then
+      exit 0
+    fi
   fi
 
   # 2) sudo: direct if we have a terminal, else via a graphical askpass.
   if command -v sudo >/dev/null 2>&1; then
     if [ -t 0 ]; then
-      exec sudo -E DISPLAY="$disp" XAUTHORITY="$xa" \
-        PYTHONPATH="$APP_DIR" "$PYBIN" -m tc4 gui
-    fi
-    if [ -z "${SUDO_ASKPASS:-}" ]; then
-      for a in /usr/bin/ssh-askpass /usr/bin/lxqt-openssh-askpass \
-               /usr/bin/ksshaskpass /usr/lib/ssh/x11-ssh-askpass \
-               /usr/libexec/openssh/ssh-askpass; do
-        [ -x "$a" ] && export SUDO_ASKPASS="$a" && break
-      done
-    fi
-    if [ -n "${SUDO_ASKPASS:-}" ]; then
-      exec sudo -A -E DISPLAY="$disp" XAUTHORITY="$xa" \
-        PYTHONPATH="$APP_DIR" "$PYBIN" -m tc4 gui
+      if sudo -E DISPLAY="$disp" XAUTHORITY="$xa" \
+        PYTHONPATH="$APP_DIR" "$PYBIN" -m tc4 gui; then
+        exit 0
+      fi
+    else
+      if [ -z "${SUDO_ASKPASS:-}" ]; then
+        for a in /usr/bin/ssh-askpass /usr/bin/lxqt-openssh-askpass \
+                 /usr/bin/ksshaskpass /usr/lib/ssh/x11-ssh-askpass \
+                 /usr/libexec/openssh/ssh-askpass; do
+          [ -x "$a" ] && export SUDO_ASKPASS="$a" && break
+        done
+      fi
+      if [ -n "${SUDO_ASKPASS:-}" ]; then
+        if sudo -A -E DISPLAY="$disp" XAUTHORITY="$xa" \
+          PYTHONPATH="$APP_DIR" "$PYBIN" -m tc4 gui; then
+          exit 0
+        fi
+      fi
     fi
   fi
 

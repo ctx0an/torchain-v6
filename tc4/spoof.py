@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import time
 
 from . import DATA_DIR
 from .errors import CommandError
@@ -63,6 +64,19 @@ def _ethernet_interfaces() -> list[str]:
     return ifaces
 
 
+def _default_gateway(iface: str) -> str | None:
+    proc = run(["ip", "route", "show", "dev", iface], check=False)
+    for line in proc.stdout.splitlines():
+        if "default via" in line:
+            parts = line.split()
+            try:
+                idx = parts.index("via")
+                return parts[idx + 1]
+            except (ValueError, IndexError):
+                pass
+    return None
+
+
 def spoof_mac() -> dict:
     if which("ip") is None:
         raise CommandError(["ip"], 127, "iproute2 not installed")
@@ -72,13 +86,28 @@ def spoof_mac() -> dict:
         original = _current_mac(iface)
         new = random_mac()
         macs.setdefault(iface, original)
+        
+        # Test ping before changing the MAC
+        gw = _default_gateway(iface)
+        can_ping_before = run_ok(["ping", "-c", "1", "-W", "1", gw]) if gw else False
+
         run_ok(["ip", "link", "set", iface, "down"])
         changed = run_ok(["ip", "link", "set", iface, "address", new])
         run_ok(["ip", "link", "set", iface, "up"])
-        # Verify (hypervisor port-security may silently reject the change).
-        if not changed or _current_mac(iface).lower() != new.lower():
-            log.warning("MAC change rejected on %s (likely VM port security); "
-                        "reverting to %s", iface, original)
+        
+        guest_changed = changed and _current_mac(iface).lower() == new.lower()
+        
+        # If changed successfully in the OS, verify the hypervisor didn't drop the connection
+        network_working = True
+        if guest_changed and can_ping_before:
+            time.sleep(0.5)  # give interface a moment to associate/up
+            if not run_ok(["ping", "-c", "1", "-W", "2", gw]):
+                network_working = False
+                log.warning("MAC change on %s passed OS check but broke network connectivity (hypervisor port security)", iface)
+        
+        # Verify (hypervisor port-security may silently reject the change or drop traffic).
+        if not guest_changed or not network_working:
+            log.warning("MAC change rejected or broke network on %s; reverting to %s", iface, original)
             run_ok(["ip", "link", "set", iface, "down"])
             run_ok(["ip", "link", "set", iface, "address", original])
             run_ok(["ip", "link", "set", iface, "up"])

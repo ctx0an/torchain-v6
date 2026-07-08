@@ -40,7 +40,7 @@ REM --- Self-elevate if not Administrator ---
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo !YELLOW!  [!!] Not running as Administrator - relaunching elevated...!RESET!
-    powershell -NoProfile -Command "Start-Process cmd.exe -ArgumentList '/c \"\"\"%~f0\"\"\" %*' -Verb RunAs"
+    powershell -NoProfile -Command "Start-Process cmd.exe -ArgumentList '/c', ('\"' + '%~f0' + '\"'), '%*' -Verb RunAs"
     exit /b 0
 )
 

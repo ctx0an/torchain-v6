@@ -49,12 +49,11 @@ def detect_virt() -> str:
 def list_interfaces() -> list:
     try:
         proc = powershell(
-            "(Get-NetAdapter -Physical | Where-Object Status -ne 'Not Present' "
-            "| Select-Object -ExpandProperty Name) -join ','",
+            "Get-NetAdapter -Physical | Where-Object Status -ne 'Not Present' "
+            "| Select-Object -ExpandProperty Name",
             timeout=20,
         )
-        names = (proc.stdout or "").strip()
-        return [n for n in names.split(",") if n]
+        return [n.strip() for n in (proc.stdout or "").splitlines() if n.strip()]
     except Exception:  # noqa: BLE001
         return []
 

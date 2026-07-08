@@ -80,9 +80,25 @@ class ControlClient:
 
     @staticmethod
     def _reply_complete(buf: bytes) -> bool:
-        for line in buf.decode("utf-8", "replace").splitlines():
-            if len(line) >= 4 and line[3] == " " and line[:3].isdigit():
-                return True
+        try:
+            text = buf.decode("utf-8", "replace")
+        except Exception:
+            return False
+        if not text.endswith("\r\n") and not text.endswith("\n"):
+            return False
+        lines = text.splitlines()
+        if not lines:
+            return False
+        in_data_block = False
+        for line in lines:
+            if in_data_block:
+                if line == ".":
+                    in_data_block = False
+            else:
+                if len(line) >= 4 and line[3] == "+" and line[:3].isdigit():
+                    in_data_block = True
+                elif len(line) >= 4 and line[3] == " " and line[:3].isdigit():
+                    return True
         return False
 
     def _command(self, line: str) -> list[str]:
@@ -247,16 +263,26 @@ def wait_bootstrap(timeout: float = 60.0, poll: float = 0.5,
     """Block until tor reports 100% bootstrap or timeout. Returns success."""
     deadline = time.time() + timeout
     last = -1
+    client = None
     while time.time() < deadline:
         try:
-            with ControlClient() as c:
-                pct = c.bootstrap_progress()
+            if client is None:
+                client = ControlClient()
+                client.connect()
+            pct = client.bootstrap_progress()
         except TorError:
             pct = 0
+            if client is not None:
+                client.close()
+                client = None
         if pct != last and on_progress:
             on_progress(pct)
         last = pct
         if pct >= 100:
+            if client is not None:
+                client.close()
             return True
         time.sleep(poll)
+    if client is not None:
+        client.close()
     return False
