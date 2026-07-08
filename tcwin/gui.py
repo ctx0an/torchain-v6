@@ -678,9 +678,14 @@ class TorChainGUI:
         from .sysutil import elevate, is_admin, NO_WINDOW
         try:
             if is_admin():
-                subprocess.Popen(
-                    [sys.executable or "python", "-m", "tcwin", *cli_args],
-                    creationflags=NO_WINDOW)
+                if getattr(sys, 'frozen', False):
+                    subprocess.Popen(
+                        [sys.argv[0], *cli_args],
+                        creationflags=NO_WINDOW)
+                else:
+                    subprocess.Popen(
+                        [sys.executable or "python", "-m", "tcwin", *cli_args],
+                        creationflags=NO_WINDOW)
                 return True
             ok = elevate(list(cli_args))
             if not ok:

@@ -44,9 +44,13 @@ def start_daemon() -> bool:
         log.info("watchdog already running")
         return True
     os.makedirs(RUN_DIR, exist_ok=True)
-    python = sys.executable or "python"
+    if getattr(sys, 'frozen', False):
+        cmd = [sys.argv[0], "watchdog", "--foreground"]
+    else:
+        python = sys.executable or "python"
+        cmd = [python, "-m", "tcwin", "watchdog", "--foreground"]
     proc = subprocess.Popen(
-        [python, "-m", "tcwin", "watchdog", "--foreground"],
+        cmd,
         creationflags=_DETACHED | _NEW_GROUP | NO_WINDOW,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,

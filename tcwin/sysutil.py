@@ -139,8 +139,15 @@ def elevate(args: Sequence[str], *, wait: bool = False) -> bool:
     consent / password prompt). This is the Windows analogue of asking for the
     sudo password before a privileged action.
     """
-    python = sys.executable or "python"
-    params = "-m tcwin " + " ".join(_quote(a) for a in args)
+    # When running as a PyInstaller frozen .exe, sys.executable points to the
+    # temp extraction dir which won't exist in the elevated process. Use the
+    # original .exe path (sys.argv[0]) instead.
+    if getattr(sys, 'frozen', False):
+        python = sys.argv[0]
+        params = " ".join(_quote(a) for a in args)
+    else:
+        python = sys.executable or "python"
+        params = "-m tcwin " + " ".join(_quote(a) for a in args)
 
     import ctypes.wintypes as w
 

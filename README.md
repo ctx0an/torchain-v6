@@ -130,6 +130,40 @@ Linux, so the Windows build is deliberately conservative:
   and background processes, restores original network/DNS settings, cleans up system PATH
   and environment variables, deletes all shortcuts, and removes the Torchain files.
 
+### Portable (no install required)
+
+Build a portable `torchain\` folder that runs on any Windows 10/11
+machine — **no Python, no VC++ Redistributable, no installer needed**. The
+folder contains `torchain.exe` with the full Python runtime, tkinter GUI,
+and tor.exe (extracted from the bundled `Tor.zip` on first run).
+
+A **folder distribution** is used instead of a single .exe because tkinter's
+Tcl/Tk runtime needs its data directories on disk for the GUI to work.
+
+```batch
+REM From the repo root on a Windows machine with Python 3.9+:
+windows\build_portable.bat
+REM Output: dist\torchain\  (and dist\torchain-portable.zip)
+```
+
+Or manually:
+```batch
+pip install pyinstaller
+pyinstaller windows\torchain_portable.spec
+REM Output: dist\torchain\
+```
+
+To use:
+1. Extract `dist\torchain-portable.zip` on any Windows 10/11 machine
+2. Right-click `torchain.exe` → **Run as administrator**
+3. First run extracts `tor.exe` + geoip to `%ProgramData%\torchain\app\tor\`
+4. Use like the installed version:
+   ```
+   torchain.exe gui           # dashboard (full tkinter GUI)
+   torchain.exe start         # CLI
+   torchain.exe doctor        # check dependencies
+   ```
+
 > Verification note: the Windows port is validated by syntax check and code
 > review in this build, not a live Windows run.
 

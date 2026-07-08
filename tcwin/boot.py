@@ -23,6 +23,9 @@ _TASK_WD = "torchain-watchdog"
 
 def _launcher() -> str:
     """Best command line to (re)start torchain non-interactively."""
+    # If running as a frozen .exe, use the .exe path directly.
+    if getattr(sys, 'frozen', False):
+        return f'"{sys.argv[0]}"'
     python = sys.executable or "python"
     # Prefer the installed launcher if present, else `python -m tcwin`.
     installed = os.path.join(SHARE_DIR, "torchain.cmd")

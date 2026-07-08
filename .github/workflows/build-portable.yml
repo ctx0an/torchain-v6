@@ -1,0 +1,90 @@
+name: Build Windows Portable
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tcwin/**'
+      - 'windows/**'
+      - '.github/workflows/build-portable.yml'
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PyInstaller
+        run: python -m pip install --upgrade pyinstaller
+
+      - name: Verify Tor.zip exists
+        run: |
+          if (!(Test-Path "windows\Tor.zip")) {
+            Write-Error "windows\Tor.zip not found"
+            exit 1
+          }
+          Write-Host "Tor.zip found: $((Get-Item 'windows\Tor.zip').Length / 1MB) MB"
+
+      - name: Build portable folder
+        run: python -m PyInstaller --noconfirm windows\torchain_portable.spec
+
+      - name: Verify build output
+        run: |
+          if (!(Test-Path "dist\torchain\torchain.exe")) {
+            Write-Error "torchain.exe not found in dist\torchain\"
+            exit 1
+          }
+          $size = (Get-Item "dist\torchain\torchain.exe").Length / 1MB
+          Write-Host "torchain.exe: $([math]::Round($size, 1)) MB"
+
+          # Check tkinter data dirs exist
+          if (Test-Path "dist\torchain\tcl8.6") {
+            Write-Host "Tcl/Tk data: OK"
+          } elseif (Test-Path "dist\torchain\_tcl_data") {
+            Write-Host "Tcl/Tk data: OK (frozen layout)"
+          } else {
+            Write-Warning "Tcl/Tk data dirs not found — GUI may not work"
+          }
+
+      - name: Create portable zip
+        run: |
+          Compress-Archive -Path "dist\torchain" -DestinationPath "dist\torchain-portable.zip" -Force
+          $zipSize = (Get-Item "dist\torchain-portable.zip").Length / 1MB
+          Write-Host "torchain-portable.zip: $([math]::Round($zipSize, 1)) MB"
+
+      - name: Upload portable folder artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: torchain-windows-portable
+          path: dist/torchain/
+          retention-days: 30
+
+      - name: Upload portable zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: torchain-windows-portable-zip
+          path: dist/torchain-portable.zip
+          retention-days: 30
+
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/torchain-portable.zip
