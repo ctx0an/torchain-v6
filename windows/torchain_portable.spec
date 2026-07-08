@@ -52,12 +52,13 @@ def _find_vc_dll(name: str) -> str | None:
 for dll_name in _VC_DLLS:
     path = _find_vc_dll(dll_name)
     if path:
-        _binaries.append((dll_name, '.'))
+        _binaries.append((path, '.'))  # (absolute source, dest in bundle root)
 
 # Also grab any Tcl/Tk DLLs if present (needed for tkinter GUI)
+py_dir = os.path.dirname(sys.executable)
 for pattern in ("tcl*.dll", "tk*.dll"):
-    for dll_path in _glob.glob(os.path.join(os.path.dirname(sys.executable), pattern)):
-        _binaries.append((os.path.basename(dll_path), '.'))
+    for dll_path in _glob.glob(os.path.join(py_dir, pattern)):
+        _binaries.append((dll_path, '.'))
 
 a = Analysis(
     [os.path.join(REPO_ROOT, 'tcwin', '__main__.py')],
@@ -133,6 +134,6 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=True,
-    upx_exclude=[],
+    upx_exclude=[os.path.basename(src) for src, _ in _binaries],
     name='torchain',
 )
