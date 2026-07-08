@@ -61,7 +61,7 @@ for pattern in ("tcl*.dll", "tk*.dll"):
         _binaries.append((dll_path, '.'))
 
 a = Analysis(
-    [os.path.join(REPO_ROOT, 'tcwin', '__main__.py')],
+    [os.path.join(REPO_ROOT, 'windows', 'entry.py')],
     pathex=[REPO_ROOT],
     binaries=_binaries,
     datas=[

@@ -42,7 +42,7 @@ for geoip_dir in ("/usr/share/tor", "/usr/share/torbrowser"):
             _datas.append((p, 'tor_data'))
 
 a = Analysis(
-    [os.path.join(REPO_ROOT, 'tc4', '__main__.py')],
+    [os.path.join(REPO_ROOT, 'linux', 'entry.py')],
     pathex=[REPO_ROOT],
     binaries=_binaries,
     datas=_datas,
