@@ -66,16 +66,45 @@ ln -sf usr/bin/torchain "$APPDIR/AppRun"
 
 # --- Generate icon ---
 info "generating app icon..."
-python3 -c "
-import sys; sys.path.insert(0, '$REPO_ROOT')
-from tc4 import icon
-icon.write_png('$APPDIR/usr/share/icons/hicolor/256x256/apps/torchain.png', 256)
-" 2>/dev/null || info "icon generation skipped (tc4 not importable directly)"
+ICON_256="$APPDIR/usr/share/icons/hicolor/256x256/apps/torchain.png"
+ICON_ROOT="$APPDIR/torchain.png"
 
-# Copy generated icon if available
-if [ -f "$REPO_ROOT/docs/torchain-icon.png" ]; then
-    cp "$REPO_ROOT/docs/torchain-icon.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/torchain.png"
-fi
+# Generate using the pure-Python icon module (no external deps needed)
+python3 -c "
+import sys, os
+sys.path.insert(0, '$REPO_ROOT')
+from tc4.icon import render
+import struct, zlib
+
+def write_png(path, size):
+    data = render(size)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'wb') as f:
+        f.write(data)
+
+write_png('$ICON_256', 256)
+write_png('$ICON_ROOT', 256)
+print('icon generated (256x256)')
+" 2>&1 || {
+    # Fallback: use docs/torchain-icon.png if it exists
+    if [ -f "$REPO_ROOT/docs/torchain-icon.png" ]; then
+        info "using docs/torchain-icon.png as fallback"
+        cp "$REPO_ROOT/docs/torchain-icon.png" "$ICON_256"
+        cp "$REPO_ROOT/docs/torchain-icon.png" "$ICON_ROOT"
+    else
+        die "Failed to generate icon and no fallback found. Place a 256x256 torchain.png in docs/"
+    fi
+}
+
+# Also generate smaller sizes for hicolor
+for sz in 16 24 32 48 64 128; do
+    python3 -c "
+import sys; sys.path.insert(0, '$REPO_ROOT')
+from tc4.icon import render
+with open('$APPDIR/usr/share/icons/hicolor/${sz}x${sz}/apps/torchain.png', 'wb') as f:
+    f.write(render($sz))
+" 2>/dev/null || true
+done
 
 # --- Desktop entry ---
 cat > "$APPDIR/torchain.desktop" << 'EOF'
