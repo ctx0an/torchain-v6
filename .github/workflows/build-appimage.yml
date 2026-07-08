@@ -1,0 +1,76 @@
+name: Build Linux AppImage
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tc4/**'
+      - 'linux/**'
+      - 'torchain'
+      - '.github/workflows/build-appimage.yml'
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-tk tor \
+            libfuse2 \
+            desktop-file-utils
+
+      - name: Install PyInstaller
+        run: python3 -m pip install --upgrade pyinstaller
+
+      - name: Make build script executable
+        run: chmod +x linux/build_appimage.sh
+
+      - name: Build AppImage
+        run: bash linux/build_appimage.sh
+
+      - name: Verify build
+        run: |
+          ARCH=$(uname -m)
+          APPIMAGE="dist/Torchain-${ARCH}.AppImage"
+          if [ ! -f "$APPIMAGE" ]; then
+            echo "ERROR: AppImage not found"
+            exit 1
+          fi
+          SIZE=$(du -h "$APPIMAGE" | cut -f1)
+          echo "AppImage: $APPIMAGE ($SIZE)"
+
+          # Verify it's a valid AppImage
+          file "$APPIMAGE" | grep -q "ELF" || echo "WARNING: Not a valid ELF binary"
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: torchain-linux-appimage
+          path: dist/Torchain-*.AppImage
+          retention-days: 30
+
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Torchain-*.AppImage
