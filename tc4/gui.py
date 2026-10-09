@@ -42,8 +42,8 @@ class TorChainGUI:
         # Collapsible animated sidebar state
         self._sidebar_collapsed = False
         self._sidebar_animating = False
-        self._sidebar_w = 230
-        self._sidebar_expanded_w = 230
+        self._sidebar_w = 250
+        self._sidebar_expanded_w = 250
         self._sidebar_collapsed_w = 64
 
         # Title is intentionally just the app name, nothing else.
@@ -205,9 +205,9 @@ class TorChainGUI:
             w.bind("<Leave>", lambda e: [star_row.configure(highlightbackground=P.border), star.configure(fg=P.warn)])
 
         tk.Label(self.sidebar_footer, text=CREDIT, bg=P.overlay, fg=P.text_dim,
-                 font=font(8), anchor="w").pack(fill="x", pady=(2, 0))
+                 font=font(8, mono=False), anchor="w").pack(fill="x", pady=(3, 0))
         tk.Label(self.sidebar_footer, text=f"v{__version__}  •  Kali Edition", bg=P.overlay, fg=P.cyan,
-                 font=font(8, bold=True), anchor="w").pack(fill="x", pady=(2, 0))
+                 font=font(8, bold=True, mono=False), anchor="w").pack(fill="x", pady=(2, 0))
 
         # Build all views once; show/hide on demand (cheap, avoids rebuilds).
         self.views = {}
