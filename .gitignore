@@ -38,3 +38,4 @@ build/
 *.swp
 *~
 .DS_Store
+release_assets/
