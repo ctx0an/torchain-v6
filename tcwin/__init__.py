@@ -14,7 +14,7 @@ required - Python is downloaded directly and tor.exe is extracted from the
 bundled Tor.zip).
 """
 
-__version__ = "5.0.0-win"
+__version__ = "6.0.0-win"
 __appname__ = "torchain"
 
 import os

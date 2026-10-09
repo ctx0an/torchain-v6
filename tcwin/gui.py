@@ -22,6 +22,7 @@ from . import engine
 from .errors import TorChainError
 from .theme import PALETTE as P
 from .theme import SPACE, font
+from .animations import ProGyroBootHUD, ProCyberButton, pulse_node_elastic
 
 REPO_URL = "https://github.com/ctx0an/torchain"
 CREDIT = "by ctx0an · Claude Opus 4.8"
@@ -53,6 +54,13 @@ class TorChainGUI:
         self._init_style()
         self._build_layout()
         self._show_view("dashboard")
+
+        # Launch zero-overhead gyroscopic HUD boot sequence overlay.
+        self._boot_overlay = ProGyroBootHUD(
+            self.content,
+            on_complete=lambda: setattr(self, "_boot_overlay", None),
+        )
+        self._boot_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
 
         # Start light pollers.
         self.root.after(200, self._drain_events)
@@ -162,15 +170,24 @@ class TorChainGUI:
         return card
 
     def _btn(self, parent, text, command, kind="primary"):
-        colors = {"primary": (P.accent, "#ffffff"), "danger": (P.dragon, "#ffffff"),
-                  "ghost": (P.surface_alt, P.text)}
-        bg, fg = colors.get(kind, colors["primary"])
-        b = tk.Label(parent, text=text, bg=bg, fg=fg, font=font(11, bold=True),
-                     padx=SPACE["lg"], pady=SPACE["sm"], cursor="hand2")
-        b.bind("<Button-1>", lambda e: command())
-        b.bind("<Enter>", lambda e: b.configure(bg=P.accent_hi if kind == "primary" else bg))
-        b.bind("<Leave>", lambda e: b.configure(bg=bg))
-        return b
+        colors = {
+            "primary": (P.surface, P.accent, P.cyan),
+            "danger": (P.surface, P.dragon, "#FF5A70"),
+            "ghost": (P.surface, P.border, P.accent_hi),
+        }
+        bg, border, hover = colors.get(kind, colors["primary"])
+        btn_w = max(130, len(text) * 11 + 24)
+        return ProCyberButton(
+            parent,
+            text=text,
+            command=command,
+            width=btn_w,
+            height=36,
+            bg_color=bg,
+            accent_color=border,
+            hover_color=hover,
+            text_color=P.text,
+        )
 
     def _open_repo(self):
         """Open the project repository in the user's browser."""

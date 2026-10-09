@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [6.0.0] - 2026-10-09
+
+### Added
+- **Pro Gyroscopic Boot HUD Animation Suite.** Tactical gyroscopic boot sequence featuring triple differential rotating dials, azimuth tick scales, scanning radar beam, and system telemetry with 0% idle CPU footprint.
+- **Cyber-Reactive Haptic Buttons (`ProCyberButton`).** 45° chamfered military-style buttons with coordinate-tracked dynamic ripple shockwaves, cryptographic text scrambler decoder on hover, and physical button spring depression.
+- **Interactive Multi-Hop Tor Circuit Visualizer.** Live packet flow animation illustrating 3-hop onion circuit paths with encrypted packet sparks and latency badges.
+- **Elastic State Pulse Engine.** One-shot transient spring pulses for status indicators with zero steady-state CPU utilization.
+
 ## [5.0.1] - 2026-06-23
 
 ### Added

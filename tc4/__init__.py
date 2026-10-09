@@ -1,11 +1,10 @@
-"""torchain v5 - high-performance, fully-automated system-wide Tor anonymizer.
+"""torchain v6 - high-performance, fully-automated system-wide Tor anonymizer.
 
-v5 adds: full auto-elevation, rich bridge management, a self-healing
-watchdog, run-on-boot, an advanced migration manager that removes older
-torchain installs and takes their place, and a unique generated app icon.
+v6 adds: enterprise gyroscopic HUD boot sequence, cyber-reactive buttons,
+state pulse animations, and zero-idle CPU vector telemetry suite.
 """
 
-__version__ = "5.0.0"
+__version__ = "6.0.0"
 __appname__ = "torchain"
 
 import os
