@@ -133,11 +133,11 @@ def build(cfg: Config, tor_dir: str | None = None) -> str:
         "CookieAuthentication 1",
         'DataDirectory "%s"' % tor_data,
         "AvoidDiskWrites 1",
-        "LearnCircuitBuildTimeout 0",
-        "CircuitBuildTimeout 10",
-        "KeepalivePeriod 60",
+        "OptimisticData 1",
+        "LearnCircuitBuildTimeout 1",
+        "KeepalivePeriod 120",
         "NewCircuitPeriod 120",
-        "NumEntryGuards 3",
+        "NumEntryGuards 1",
     ]
     lines.extend(_geoip_lines(tor_dir))
     if cfg.block_ipv6:

@@ -124,6 +124,7 @@ def spoof_hostname(new_name: str | None = None) -> dict:
     if "hostname" not in state:
         state["hostname"] = run(["hostname"], check=False).stdout.strip()
     new_name = new_name or "localhost"
+    state["spoofed_hostname"] = new_name
     _ensure_hosts_entry(new_name)  # add mapping BEFORE switching
     run_ok(["hostname", new_name])
     _save_state(state)
@@ -162,9 +163,17 @@ def restore() -> None:
         run_ok(["ip", "link", "set", iface, "down"])
         run_ok(["ip", "link", "set", iface, "address", mac])
         run_ok(["ip", "link", "set", iface, "up"])
-    if state.get("hostname"):
-        run_ok(["hostname", state["hostname"]])
-        _remove_hosts_entry(state["hostname"])
+    orig = state.get("hostname")
+    spoofed = state.get("spoofed_hostname")
+    if not spoofed and orig:
+        curr = run(["hostname"], check=False).stdout.strip()
+        if curr and curr != orig:
+            spoofed = curr
+    if orig:
+        run_ok(["hostname", orig])
+        _ensure_hosts_entry(orig)
+    if spoofed and spoofed != orig and spoofed != "localhost":
+        _remove_hosts_entry(spoofed)
     try:
         os.remove(_STATE)
     except OSError:

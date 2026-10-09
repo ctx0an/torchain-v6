@@ -6,7 +6,10 @@ import sys
 if getattr(sys, 'frozen', False):
     from tc4.cli import main
 else:
-    from .cli import main
+    try:
+        from .cli import main
+    except (ImportError, ValueError):
+        from tc4.cli import main
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

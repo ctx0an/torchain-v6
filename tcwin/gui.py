@@ -109,46 +109,87 @@ class TorChainGUI:
         body = tk.Frame(self.root, bg=P.bg)
         body.pack(side="top", fill="both", expand=True)
 
-        self.sidebar = tk.Frame(body, bg=P.overlay, width=190)
+        # 225px width gives comfortable breathing room so all labels and footers fit cleanly without truncation
+        self.sidebar = tk.Frame(body, bg=P.overlay, width=225, highlightbackground=P.border, highlightthickness=1)
         self.sidebar.pack(side="left", fill="y")
         self.sidebar.pack_propagate(False)
 
         self.content = tk.Frame(body, bg=P.bg)
         self.content.pack(side="left", fill="both", expand=True)
 
-        self._nav_buttons = {}
-        for key, label in (("dashboard", "▣  Dashboard"),
-                           ("circuits", "⦿  Circuits"),
-                           ("bridges", "⇄  Bridges"),
-                           ("leaktest", "✓  Leak Test"),
-                           ("settings", "⚙  Settings"),
-                           ("advanced", "⚡  Advanced"),
-                           ("logs", "≡  Logs")):
-            b = tk.Label(self.sidebar, text=label, bg=P.overlay, fg=P.text_dim,
-                         font=font(11), anchor="w", padx=SPACE["lg"], pady=SPACE["md"])
-            b.pack(fill="x")
-            b.bind("<Button-1>", lambda e, k=key: self._show_view(k))
-            b.bind("<Enter>", lambda e, w=b: w.configure(fg=P.text))
-            b.bind("<Leave>", lambda e, w=b, k=key: w.configure(
-                fg=P.accent if k == self._active_view else P.text_dim))
-            self._nav_buttons[key] = b
+        self._nav_items = {}
+        nav_entries = (
+            ("dashboard", "▣", "Dashboard"),
+            ("circuits", "⦿", "Circuits"),
+            ("bridges", "⇄", "Bridges"),
+            ("leaktest", "✓", "Leak Test"),
+            ("settings", "⚙", "Settings"),
+            ("advanced", "⚡", "Advanced"),
+            ("logs", "≡", "Logs"),
+        )
 
-        # Sidebar footer: star button + credit + version (always visible).
+        nav_container = tk.Frame(self.sidebar, bg=P.overlay)
+        nav_container.pack(fill="x", pady=(SPACE["md"], 0))
+
+        for key, icon_sym, title in nav_entries:
+            row = tk.Frame(nav_container, bg=P.overlay, cursor="hand2")
+            row.pack(fill="x", pady=2)
+
+            # Left active accent indicator (4px wide)
+            bar = tk.Frame(row, bg=P.overlay, width=4)
+            bar.pack(side="left", fill="y")
+
+            # Icon label with dedicated fixed width so text lines up perfectly
+            icon_lbl = tk.Label(
+                row, text=icon_sym, bg=P.overlay, fg=P.text_dim,
+                font=font(12), width=3, anchor="center"
+            )
+            icon_lbl.pack(side="left", padx=(4, 0), pady=7)
+
+            # Title label
+            txt_lbl = tk.Label(
+                row, text=title, bg=P.overlay, fg=P.text_dim,
+                font=font(10, bold=False), anchor="w"
+            )
+            txt_lbl.pack(side="left", fill="x", expand=True, padx=(2, SPACE["md"]), pady=7)
+
+            # Bindings for entire row and children
+            for widget in (row, bar, icon_lbl, txt_lbl):
+                widget.bind("<Button-1>", lambda e, k=key: self._show_view(k))
+                widget.bind("<Enter>", lambda e, k=key: self._nav_hover(k, True))
+                widget.bind("<Leave>", lambda e, k=key: self._nav_hover(k, False))
+
+            self._nav_items[key] = {
+                "row": row,
+                "bar": bar,
+                "icon": icon_lbl,
+                "text": txt_lbl,
+            }
+
+        # Sidebar footer: star button + credit + version (clean, unclipped, styled).
         footer = tk.Frame(self.sidebar, bg=P.overlay)
-        footer.pack(side="bottom", fill="x", pady=SPACE["md"])
+        footer.pack(side="bottom", fill="x", padx=SPACE["md"], pady=SPACE["md"])
 
-        star = tk.Label(footer, text="★  Star on GitHub", bg=P.overlay,
-                        fg=P.warn, font=font(10, bold=True), cursor="hand2",
-                        anchor="w", padx=SPACE["lg"], pady=SPACE["sm"])
+        # Subtle separator line above footer
+        sep = tk.Frame(footer, bg=P.border, height=1)
+        sep.pack(fill="x", pady=(0, SPACE["sm"]))
+
+        star_row = tk.Frame(footer, bg=P.surface, cursor="hand2", highlightbackground=P.border, highlightthickness=1)
+        star_row.pack(fill="x", pady=(0, SPACE["sm"]))
+        star = tk.Label(
+            star_row, text="★  Star on GitHub", bg=P.surface,
+            fg=P.warn, font=font(9, bold=True), anchor="center", pady=5
+        )
         star.pack(fill="x")
-        star.bind("<Button-1>", lambda e: self._open_repo())
-        star.bind("<Enter>", lambda e: star.configure(fg=P.accent_hi))
-        star.bind("<Leave>", lambda e: star.configure(fg=P.warn))
+        for w in (star_row, star):
+            w.bind("<Button-1>", lambda e: self._open_repo())
+            w.bind("<Enter>", lambda e: [star_row.configure(highlightbackground=P.accent), star.configure(fg=P.accent_hi)])
+            w.bind("<Leave>", lambda e: [star_row.configure(highlightbackground=P.border), star.configure(fg=P.warn)])
 
         tk.Label(footer, text=CREDIT, bg=P.overlay, fg=P.text_dim,
-                 font=font(9), anchor="w", padx=SPACE["lg"]).pack(fill="x")
-        tk.Label(footer, text=f"v{__version__}", bg=P.overlay, fg=P.text_faint,
-                 font=font(9), anchor="w", padx=SPACE["lg"]).pack(fill="x")
+                 font=font(8), anchor="w").pack(fill="x", pady=(2, 0))
+        tk.Label(footer, text=f"v{__version__}  •  Kali Edition", bg=P.overlay, fg=P.cyan,
+                 font=font(8, bold=True), anchor="w").pack(fill="x", pady=(2, 0))
 
         # Build all views once; show/hide on demand (cheap, avoids rebuilds).
         self.views = {}
@@ -574,13 +615,37 @@ class TorChainGUI:
     # ------------------------------------------------------------------
     # View switching
     # ------------------------------------------------------------------
+    def _nav_hover(self, key: str, is_hover: bool) -> None:
+        if key == self._active_view:
+            return
+        item = self._nav_items.get(key)
+        if not item:
+            return
+        bg = P.surface if is_hover else P.overlay
+        fg = P.text if is_hover else P.text_dim
+        item["row"].configure(bg=bg)
+        item["icon"].configure(bg=bg, fg=fg)
+        item["text"].configure(bg=bg, fg=fg)
+
     def _show_view(self, key):
         for v in self.views.values():
             v.pack_forget()
         self.views[key].pack(fill="both", expand=True)
         self._active_view = key
-        for k, b in self._nav_buttons.items():
-            b.configure(fg=P.accent if k == key else P.text_dim)
+
+        # Update professional active styling across nav items
+        for k, item in self._nav_items.items():
+            is_active = (k == key)
+            row_bg = P.surface_alt if is_active else P.overlay
+            bar_color = P.cyan if is_active else P.overlay
+            icon_color = P.cyan if is_active else P.text_dim
+            txt_color = "#FFFFFF" if is_active else P.text_dim
+
+            item["row"].configure(bg=row_bg)
+            item["bar"].configure(bg=bar_color)
+            item["icon"].configure(bg=row_bg, fg=icon_color)
+            item["text"].configure(bg=row_bg, fg=txt_color, font=font(10, bold=is_active))
+
         if key == "circuits":
             self._refresh_circuits()
         elif key == "bridges":

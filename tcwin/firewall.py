@@ -15,6 +15,8 @@ previous outbound policy is restored to the Windows default (allow) on stop.
 """
 from __future__ import annotations
 
+import os
+
 from . import FW_RULE_PREFIX
 from .config import Config
 from .errors import FirewallError
@@ -26,6 +28,50 @@ log = get_logger()
 _RULE_TOR = f"{FW_RULE_PREFIX}-allow-tor"
 _RULE_LOOPBACK = f"{FW_RULE_PREFIX}-allow-loopback"
 _RULE_BLOCK6 = f"{FW_RULE_PREFIX}-block-ipv6"
+
+_KNOWN_PT_NAMES = (
+    "lyrebird",
+    "conjure-client",
+    "snowflake-client",
+    "snowflake",
+    "webtunnel-client",
+    "webtunnel",
+    "obfs4proxy",
+)
+
+
+def _find_pt_executables(tor_exe: str) -> list[str]:
+    """Locate pluggable transport executables in the Tor directory tree and PATH."""
+    pts: list[str] = []
+    seen: set[str] = set()
+    tor_dir = os.path.dirname(os.path.abspath(tor_exe))
+    search_dirs = [
+        os.path.join(tor_dir, "PluggableTransports"),
+        tor_dir,
+        os.path.join(os.path.dirname(tor_dir), "PluggableTransports"),
+    ]
+    for d in search_dirs:
+        if not os.path.isdir(d):
+            continue
+        try:
+            for entry in os.listdir(d):
+                if entry.lower().endswith(".exe") and entry.lower() != "tor.exe":
+                    full = os.path.abspath(os.path.join(d, entry))
+                    if full.lower() not in seen:
+                        seen.add(full.lower())
+                        pts.append(full)
+        except OSError:
+            pass
+
+    for name in _KNOWN_PT_NAMES:
+        p = which(name) or which(f"{name}.exe")
+        if p:
+            abs_p = os.path.abspath(p)
+            if abs_p.lower() not in seen:
+                seen.add(abs_p.lower())
+                pts.append(abs_p)
+
+    return pts
 
 
 def _netsh(*args: str, check: bool = True):
@@ -39,7 +85,10 @@ def _set_policy(outbound: str) -> None:
 
 
 def _delete_rules() -> None:
-    for name in (_RULE_TOR, _RULE_LOOPBACK, _RULE_BLOCK6):
+    rule_names = [_RULE_TOR, _RULE_LOOPBACK, _RULE_BLOCK6]
+    for pt in _KNOWN_PT_NAMES:
+        rule_names.append(f"{FW_RULE_PREFIX}-allow-pt-{pt}")
+    for name in rule_names:
         run_ok(["netsh", "advfirewall", "firewall", "delete", "rule",
                 f"name={name}"])
 
@@ -57,6 +106,13 @@ def up(cfg: Config, tor_exe: str) -> None:
              f"name={_RULE_TOR}", "dir=out", "action=allow",
              f'program="{tor_exe}"', "enable=yes", "profile=any"],
             check=True, timeout=20)
+        # Allow pluggable transports (lyrebird, conjure-client, snowflake, etc.)
+        for pt_exe in _find_pt_executables(tor_exe):
+            base = os.path.splitext(os.path.basename(pt_exe))[0].lower()
+            run(["netsh", "advfirewall", "firewall", "add", "rule",
+                 f"name={FW_RULE_PREFIX}-allow-pt-{base}", "dir=out", "action=allow",
+                 f'program="{pt_exe}"', "enable=yes", "profile=any"],
+                check=False, timeout=20)
         # Allow loopback so SOCKS clients can reach tor on 127.0.0.1.
         run(["netsh", "advfirewall", "firewall", "add", "rule",
              f"name={_RULE_LOOPBACK}", "dir=out", "action=allow",

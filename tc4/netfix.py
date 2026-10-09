@@ -88,6 +88,45 @@ def _restore_dns() -> list[str]:
     return out
 
 
+def _verify_hosts_file(orig_host: str | None = None, spoofed_host: str | None = None) -> list[str]:
+    out: list[str] = []
+    hosts_path = "/etc/hosts"
+    if not os.path.exists(hosts_path):
+        return out
+    try:
+        with open(hosts_path, "r", encoding="utf-8") as fh:
+            content = fh.read()
+        lines = content.splitlines()
+
+        # If spoofed hostname was set and differs from original, remove it
+        if spoofed_host and spoofed_host not in ("localhost", "127.0.0.1", orig_host):
+            lines = [ln for ln in lines
+                     if ln.strip() != f"127.0.0.1\t{spoofed_host}"
+                     and ln.strip() != f"127.0.0.1 {spoofed_host}"]
+
+        # Ensure localhost exists
+        has_localhost = any("localhost" in ln.split() for ln in lines if not ln.strip().startswith("#"))
+        if not has_localhost:
+            lines.append("127.0.0.1\tlocalhost")
+
+        # Ensure current or original hostname exists
+        target_host = orig_host or (run(["hostname"], check=False).stdout.strip() if which("hostname") else "")
+        if target_host and target_host != "localhost":
+            has_host = any(target_host in ln.split() for ln in lines if not ln.strip().startswith("#"))
+            if not has_host:
+                lines.append(f"127.0.1.1\t{target_host}")
+                out.append(f"added {target_host} to /etc/hosts")
+
+        new_content = "\n".join(lines) + "\n"
+        if new_content != content:
+            with open(hosts_path, "w", encoding="utf-8") as fh:
+                fh.write(new_content)
+            out.append("/etc/hosts verified and repaired")
+    except OSError as exc:
+        out.append(f"/etc/hosts could not be updated: {exc}")
+    return out
+
+
 def _restore_identity() -> list[str]:
     out: list[str] = []
     # Bring every non-loopback interface back up (spoofing leaves them down on
@@ -102,15 +141,19 @@ def _restore_identity() -> list[str]:
             pass
     # Restore the original hostname if torchain spoofed it.
     state_path = os.path.join(DATA_DIR, "spoof_state.json")
+    host: str | None = None
+    spoofed_host: str | None = None
     try:
         with open(state_path, "r", encoding="utf-8") as fh:
             state = json.load(fh)
         host = state.get("hostname")
+        spoofed_host = state.get("spoofed_hostname")
         if host and which("hostname"):
             run_ok(["hostname", host])
             out.append(f"hostname restored to {host}")
     except (OSError, json.JSONDecodeError):
         pass
+    out.extend(_verify_hosts_file(host, spoofed_host))
     return out
 
 

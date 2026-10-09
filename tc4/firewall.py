@@ -66,6 +66,9 @@ def up(cfg: Config, tor_user: str) -> None:
         _ipt("-t", "nat", "-A", "TORCHAIN", "-m", "owner", "--uid-owner", uid, "-j", "RETURN")
         _ipt("-t", "nat", "-A", "TORCHAIN", "-p", "udp", "--dport", "53",
              "-j", "REDIRECT", "--to-ports", dns)
+        # Route .onion virtual addresses (10.192.0.0/10) to tor before private IP bypass.
+        _ipt("-t", "nat", "-A", "TORCHAIN", "-d", "10.192.0.0/10", "-p", "tcp", "--syn",
+             "-j", "REDIRECT", "--to-ports", trans)
         for net in _NON_TOR:
             _ipt("-t", "nat", "-A", "TORCHAIN", "-d", net, "-j", "RETURN")
         _ipt("-t", "nat", "-A", "TORCHAIN", "-p", "tcp", "--syn",
@@ -79,6 +82,8 @@ def up(cfg: Config, tor_user: str) -> None:
              "ESTABLISHED,RELATED", "-j", "ACCEPT")
         _ipt("-A", "TORCHAIN_OUT", "-m", "owner", "--uid-owner", uid, "-j", "ACCEPT")
         _ipt("-A", "TORCHAIN_OUT", "-o", "lo", "-j", "ACCEPT")
+        # Allow .onion virtual address range to tor transport before _NON_TOR bypass.
+        _ipt("-A", "TORCHAIN_OUT", "-d", "10.192.0.0/10", "-p", "tcp", "-j", "ACCEPT")
         for net in _NON_TOR:
             _ipt("-A", "TORCHAIN_OUT", "-d", net, "-j", "ACCEPT")
         # Allow already-redirected traffic to reach tor's ports on loopback.

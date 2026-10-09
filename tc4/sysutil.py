@@ -51,8 +51,14 @@ def require_root() -> None:
     display = os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
     pkexec = shutil.which("pkexec")
     
-    # If the current script is a python file, run it with the interpreter
-    base_args = [sys.executable] + sys.argv if sys.argv[0].endswith(".py") else sys.argv
+    # If the current script was invoked via python -m tc4, elevate with python3 -m tc4
+    script_base = os.path.basename(sys.argv[0])
+    if script_base == "__main__.py":
+        base_args = [sys.executable, "-m", "tc4", *sys.argv[1:]]
+    elif sys.argv[0].endswith(".py"):
+        base_args = [sys.executable, *sys.argv]
+    else:
+        base_args = sys.argv
     
     if pkexec and display:
         argv = ["pkexec"] + base_args

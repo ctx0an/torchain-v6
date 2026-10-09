@@ -76,6 +76,9 @@ def load() -> Config:
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as fh:
             data = json.load(fh)
+    except PermissionError:
+        # Unprivileged session (e.g. testing GUI locally): fallback gracefully to defaults
+        return Config()
     except (OSError, json.JSONDecodeError) as exc:
         raise ConfigError(
             f"could not read config at {CONFIG_FILE}: {exc}",

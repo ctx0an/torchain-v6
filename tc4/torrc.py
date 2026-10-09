@@ -112,12 +112,12 @@ def build(cfg: Config, tor_user: str | None = None) -> str:
         "CookieAuthentication 1",
         f"DataDirectory {tor_data}",
         "AvoidDiskWrites 1",
-        # Fast, predictable bootstrap.
-        "LearnCircuitBuildTimeout 0",
-        "CircuitBuildTimeout 10",
-        "KeepalivePeriod 60",
+        # High performance and adaptive circuit tuning
+        "OptimisticData 1",
+        "LearnCircuitBuildTimeout 1",
+        "KeepalivePeriod 120",
         "NewCircuitPeriod 120",
-        "NumEntryGuards 3",
+        "NumEntryGuards 1",
     ]
     if tor_user:
         lines.append(f"User {tor_user}")
