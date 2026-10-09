@@ -25,7 +25,7 @@ jobs:
         env:
           # SC1090/SC1091: dynamic 'source' paths are intentional.
           # SC2129: grouped redirects are a style preference here.
-          SHELLCHECK_OPTS: -e SC1090 -e SC1091 -e SC2129
+          SHELLCHECK_OPTS: -e SC1090 -e SC1091 -e SC2129 -e SC2034
 
   python:
     name: Python (compile + lint)

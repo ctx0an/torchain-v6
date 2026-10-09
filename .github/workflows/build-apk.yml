@@ -39,7 +39,9 @@ jobs:
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "platforms;android-36" "build-tools;34.0.0" "build-tools;36.1.0" > /dev/null 2>&1 || true
 
       - name: Verify gradlew is executable
-        run: chmod +x gradlew
+        run: |
+          sed -i 's/\r$//' gradlew
+          chmod +x gradlew
 
       - name: Download tor native libraries
         run: bash scripts/download_tor.sh
