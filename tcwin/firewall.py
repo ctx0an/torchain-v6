@@ -99,13 +99,16 @@ def _delete_rules() -> None:
 
 
 def up(cfg: Config, tor_exe: str) -> None:
-    """Engage the kill-switch. Idempotent: tears down first."""
+    """Engage the kill-switch. Additively updates rules and blocks outbound without an open window."""
     if which("netsh") is None:
         raise FirewallError("netsh not found (Windows Defender Firewall unavailable)")
-    down(cfg, quiet=True)
     try:
         # Make sure the firewall itself is on.
         _netsh("set", "allprofiles", "state", "on", check=True)
+
+        # Delete existing torchain rules additively before re-adding, without resetting outbound policy to allow
+        _delete_rules()
+
         # Allow tor.exe outbound on every profile. Quote the path to support spaces.
         run(["netsh", "advfirewall", "firewall", "add", "rule",
              f"name={_RULE_TOR}", "dir=out", "action=allow",
@@ -125,11 +128,12 @@ def up(cfg: Config, tor_exe: str) -> None:
              "remoteip=127.0.0.0/8", "enable=yes", "profile=any"],
             check=True, timeout=20)
         if cfg.block_ipv6:
-            # Belt-and-suspenders: explicitly block all IPv6 egress.
+            # Belt-and-suspenders: block IPv6 egress using valid Windows IP range syntax
             run(["netsh", "advfirewall", "firewall", "add", "rule",
                  f"name={_RULE_BLOCK6}", "dir=out", "action=block",
-                 "remoteip=::/0", "enable=yes", "profile=any"],
-                check=True, timeout=20)
+                 "remoteip=0::-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+                 "enable=yes", "profile=any"],
+                check=False, timeout=20)
         # Flip the default outbound policy to block (fail-closed).
         _netsh("set", "allprofiles", "firewallpolicy", "blockinbound,blockoutbound", check=True)
     except Exception as exc:  # noqa: BLE001

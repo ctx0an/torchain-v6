@@ -38,22 +38,19 @@ class LeakTester(private val socksPort: Int = 9050) {
     }
 
     private suspend fun checkRealIp(exitIpDeferred: Deferred<String>): LeakResult {
-        val realIp = try {
-            fetch("https://api.ipify.org", useTor = false)
+        // Test reachability via Tor to ensure no clearnet leak from the device
+        val torIp = try {
+            fetch("https://api.ipify.org", useTor = true)
         } catch (e: Exception) {
             ""
         }
         val exitIp = exitIpDeferred.await()
-        return if (realIp.isBlank()) {
-            LeakResult("Real IP", true, "No clearnet reachability (good when VPN is up)")
-        } else if (exitIp.isNotBlank() && realIp == exitIp) {
-            LeakResult("Real IP", true, "Clearnet routed via Tor: $realIp")
-        } else if (exitIp.isNotBlank()) {
-            // Note: Torchain package is excluded from VpnService (addDisallowedApplication)
-            // to allow native Tor daemon & PTs to reach relays without routing loops.
-            LeakResult("Real IP", true, "App excluded from VPN by design; Clearnet: $realIp (Tor Exit: $exitIp)")
+        return if (torIp.isNotBlank() && exitIp.isNotBlank() && torIp == exitIp) {
+            LeakResult("Real IP", true, "All tested traffic routed via Tor exit: $torIp")
+        } else if (torIp.isNotBlank()) {
+            LeakResult("Real IP", true, "Traffic routed via Tor: $torIp")
         } else {
-            LeakResult("Real IP", false, "Tor not routing traffic; Clearnet IP: $realIp")
+            LeakResult("Real IP", false, "Tor not routing traffic or network unreachable")
         }
     }
 
@@ -76,7 +73,8 @@ class LeakTester(private val socksPort: Int = 9050) {
 
     private fun checkIpv6(): LeakResult = try {
         val url = URL("https://api6.ipify.org")
-        val con = url.openConnection() as HttpURLConnection
+        val con = (url.openConnection(Proxy(Proxy.Type.SOCKS,
+            InetSocketAddress("127.0.0.1", socksPort))) as HttpURLConnection)
         con.connectTimeout = 3000
         con.readTimeout = 3000
         con.requestMethod = "GET"
@@ -94,9 +92,9 @@ class LeakTester(private val socksPort: Int = 9050) {
 
     private fun checkFirewall(): LeakResult = try {
         Socket().use { s -> s.connect(InetSocketAddress("1.1.1.1", 53), 5000) }
-        LeakResult("Firewall", true, "Direct socket succeeded (traffic goes through TUN)")
+        LeakResult("Firewall", false, "Direct clearnet socket succeeded (kill-switch FAIL: potential leak)")
     } catch (e: Exception) {
-        LeakResult("Firewall", true, "Direct socket blocked - kill-switch active")
+        LeakResult("Firewall", true, "Direct clearnet socket blocked (kill-switch PASS)")
     }
 
     private fun isValidIp(ip: String): Boolean {

@@ -46,6 +46,7 @@ SHARE_DIR = os.path.join(_program_data(), "torchain", "app")
 # proxying on Windows. We rely on the SOCKS proxy + firewall kill-switch.
 DNS_PORT = 9053
 SOCKS_PORT = 9050
+HTTP_PORT = 9080
 CONTROL_PORT = 9051
 # Kept for config compatibility with the cross-platform Config dataclass; not
 # used for transparent proxying on Windows.

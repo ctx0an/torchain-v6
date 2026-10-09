@@ -109,6 +109,22 @@ class TorService : LifecycleService() {
             ACTION_ROTATE -> lifecycleScope.launch { tor.rotateIdentity() }
             ACTION_PANIC -> lifecycleScope.launch { tor.panic() }
             ACTION_REFRESH_CIRCUITS -> lifecycleScope.launch { tor.refreshCircuits() }
+            ACTION_STATUS -> {
+                val stateName = intent.getStringExtra(EXTRA_STATE)
+                val msg = intent.getStringExtra(EXTRA_MESSAGE) ?: "VPN Error"
+                if (stateName == TorState.Error::class.java.simpleName) {
+                    Logger.e("TorService", "Received VPN error/revocation: $msg")
+                    lifecycleScope.launch {
+                        tor.stop()
+                        val errStatus = TorStatus(state = TorState.Error(msg), message = msg)
+                        updateNotification(errStatus)
+                        broadcastState(errStatus)
+                        TorStatusBus.update(errStatus)
+                        vpnStarted = false
+                        startRequested = false
+                    }
+                }
+            }
         }
         return START_STICKY
     }

@@ -74,7 +74,7 @@ def _safe_steps(report: list[str]) -> None:
     _step("renew DHCP lease", run_ok(["ipconfig", "/renew"]), report)
 
 
-def repair(deep: bool = False) -> str:
+def repair(deep: bool = False, force: bool = False) -> str:
     """Run the recovery sequence; returns a human-readable report.
 
     deep=False (default): only safe, reversible, connectivity-restoring steps.
@@ -82,6 +82,19 @@ def repair(deep: bool = False) -> str:
     require a reboot and may affect other networking software - use only when
     the safe repair did not restore connectivity.
     """
+    from . import config as config_mod
+    from . import engine
+
+    cfg = config_mod.load()
+    st = engine.status(cfg)
+    if cfg.active or st.active or st.tor_running:
+        log.warning("repair requested while Tor is active; stopping Tor first to prevent leaks")
+        try:
+            engine.stop(cfg)
+        except Exception as exc:
+            log.error("failed to stop Tor before repair: %s", exc)
+            return f"Error: Cannot repair network while Tor is active (stop failed: {exc}). Please run 'torchain stop' first."
+
     report: list[str] = ["Network recovery:"]
     _safe_steps(report)
 

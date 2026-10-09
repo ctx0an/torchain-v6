@@ -110,6 +110,16 @@ def run_foreground() -> int:
             except Exception as exc:  # noqa: BLE001
                 _log(f"status error: {exc}")
                 continue
+            last_rotate = getattr(run_foreground, "_last_rotate", time.time())
+            if cfg.active and getattr(cfg, "auto_rotate_minutes", 0) > 0:
+                if time.time() - last_rotate >= cfg.auto_rotate_minutes * 60:
+                    try:
+                        engine.newnym()
+                        run_foreground._last_rotate = time.time()
+                        _log("auto-rotated Tor identity")
+                    except Exception as exc:  # noqa: BLE001
+                        _log(f"auto-rotate failed: {exc}")
+
             if not st.tor_running:
                 fails += 1
                 _log(f"tor down (attempt {fails}); restarting")

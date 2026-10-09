@@ -82,13 +82,39 @@ object Logger {
         write('E', tag, msg + (t?.let { " - " + it.stack() } ?: "")); Log.e(tag, msg, t)
     }
 
+    private val IPV4_PATTERN = Regex("""\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b""")
+    private val IPV6_PATTERN = Regex("""\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b""")
+    private val BRIDGE_SECRET_PATTERN = Regex("""(cert=[^\s]+|iat-mode=\d+|fingerprint=[0-9A-Fa-f]+|[0-9A-Fa-f]{40})""")
+
+    private fun maskSensitive(text: String): String {
+        var masked = IPV4_PATTERN.replace(text) { matchResult ->
+            val ip = matchResult.value
+            if (ip.startsWith("127.") || ip == "0.0.0.0" || ip.startsWith("10.211.211.")) {
+                ip
+            } else {
+                "[REDACTED_IP]"
+            }
+        }
+        masked = IPV6_PATTERN.replace(masked) { matchResult ->
+            val ip = matchResult.value
+            if (ip == "::1" || ip.startsWith("fd00:")) {
+                ip
+            } else {
+                "[REDACTED_IPV6]"
+            }
+        }
+        masked = BRIDGE_SECRET_PATTERN.replace(masked, "[REDACTED_BRIDGE_DATA]")
+        return masked
+    }
+
     private fun write(level: Char, tag: String, msg: String) {
         if (!::logDir.isInitialized) return
+        val sanitized = maskSensitive(msg)
         synchronized(lock) {
             try {
                 val cur = File(logDir, "torchain.log")
                 if (cur.exists() && cur.length() > MAX_LOG_BYTES) rotate()
-                cur.appendText("${isoFormat.format(Date())} $level/$tag: $msg\n")
+                cur.appendText("${isoFormat.format(Date())} $level/$tag: $sanitized\n")
             } catch (_: Exception) { }
         }
     }

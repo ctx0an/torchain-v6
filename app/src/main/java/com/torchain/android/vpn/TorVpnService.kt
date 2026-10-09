@@ -195,14 +195,14 @@ class TorVpnService : VpnService() {
                     Logger.i("vpn-tproxy", "TProxyStartService returned normally")
                 } catch (t: Throwable) {
                     Logger.e("vpn-tproxy", "TProxyStartService crashed: ${t.message}", t)
-                    // If the native tunnel dies, surface a clear error and tear down
-                    // gracefully instead of leaving a half-open VPN.
                     if (running) {
                         updateTorStateError("VPN tunnel crashed: ${t.message}")
                     }
                 } finally {
                     if (running) {
-                        stopSelfSafely()
+                        // Fail-closed blackhole: Do NOT call stopSelfSafely() or close the TUN fd.
+                        // Keeping the TUN interface alive blackholes device traffic to prevent clearnet leaks.
+                        Logger.w("vpn-tproxy", "TProxy tunnel exited - retaining TUN as fail-closed blackhole")
                     }
                 }
             }, "tproxy-worker").apply {
@@ -211,6 +211,7 @@ class TorVpnService : VpnService() {
             }
             tproxyThread = worker
             running = true
+            isTunnelActive = true
             Logger.i("vpn", "TProxy worker thread dispatched — VPN fully active")
         } catch (e: Throwable) {
             if (!running) {
@@ -254,6 +255,15 @@ class TorVpnService : VpnService() {
             putExtra(com.torchain.android.service.TorService.EXTRA_MESSAGE, message)
         }
         androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        // Also send explicit broadcast intent directly to TorService
+        try {
+            val svcIntent = Intent(this, com.torchain.android.service.TorService::class.java).apply {
+                action = com.torchain.android.service.TorService.ACTION_STATUS
+                putExtra(com.torchain.android.service.TorService.EXTRA_STATE, TorState.Error::class.java.simpleName)
+                putExtra(com.torchain.android.service.TorService.EXTRA_MESSAGE, message)
+            }
+            startService(svcIntent)
+        } catch (_: Exception) {}
     }
 
     private fun stopSelfSafely() {
@@ -266,12 +276,25 @@ class TorVpnService : VpnService() {
     }
 
     override fun onRevoke() {
-        Logger.w("vpn", "VPN revoked by system/user")
+        Logger.w("vpn", "VPN revoked by system/user - failing closed to prevent leaks")
+        updateTorStateError("VPN permission revoked by system/user - all traffic blocked")
+        // Fail-closed: Stop local proxy and proxy worker so no traffic flows,
+        // and instruct TorService to halt rather than failing open to clearnet.
+        try {
+            localProxy?.stop()
+            localProxy = null
+        } catch (_: Exception) {}
+        try {
+            if (org.torproject.android.service.TProxyService.isAvailable()) {
+                org.torproject.android.service.TProxyService.TProxyStopService()
+            }
+        } catch (_: Exception) {}
         teardown()
         stopSelf()
     }
 
     private fun teardown() = synchronized(this) {
+        isTunnelActive = false
         if (!running && tunFd == null && localProxy == null && tproxyThread == null) {
             try { scope.cancel() } catch (_: Exception) {}
             return
@@ -333,5 +356,8 @@ class TorVpnService : VpnService() {
         private const val TOR_SOCKS_PORT = 9050
         private const val TOR_DNS_PORT = 5400
         private const val LOCAL_PROXY_PORT = 9053
+
+        @Volatile var isTunnelActive: Boolean = false
+            internal set
     }
 }

@@ -130,16 +130,83 @@ def listing(cfg: Config | None = None) -> list[str]:
 
 # -- Bridge fetching ------------------------------------------------------------
 
+def _socks5_connect(host: str, port: int, *, sport: int, timeout: float = 10.0) -> socket.socket:
+    """Open a TCP stream to host:port via the local tor SOCKS5 proxy."""
+    s = socket.create_connection(("127.0.0.1", sport), timeout)
+    s.settimeout(timeout)
+    s.sendall(b"\x05\x01\x00")
+    if s.recv(2) != b"\x05\x00":
+        s.close()
+        raise OSError("SOCKS5 handshake rejected")
+    h = host.encode("idna")
+    req = b"\x05\x01\x00\x03" + bytes([len(h)]) + h + port.to_bytes(2, "big")
+    s.sendall(req)
+    rep = s.recv(4)
+    if len(rep) < 2 or rep[1] != 0x00:
+        s.close()
+        raise OSError(f"SOCKS5 connect failed (code {rep[1] if len(rep) > 1 else '?'})")
+    atyp = rep[3] if len(rep) > 3 else 1
+    if atyp == 1:
+        s.recv(4 + 2)
+    elif atyp == 3:
+        ln = s.recv(1)
+        s.recv(ln[0] + 2)
+    elif atyp == 4:
+        s.recv(16 + 2)
+    return s
+
+
 def fetch_bridges(transport: str = "obfs4", url: str | None = None) -> list[str]:
     source = url or MOAT_URL
+    cfg = config_mod.load()
+    body = None
+
+    # Try fetching via local Tor SOCKS proxy first to avoid exposing real IP
     try:
-        with urllib.request.urlopen(source, timeout=15) as resp:
-            body = resp.read().decode("utf-8")
-    except (urllib.error.URLError, OSError, ValueError) as exc:
-        raise ConfigError(
-            f"could not fetch bridges from {source}",
-            hint=f"Network error: {exc}. Check your connection or specify a custom URL.",
-        ) from exc
+        from urllib.parse import urlparse
+        import ssl
+        parsed = urlparse(source)
+        host = parsed.hostname or "bridges.torproject.org"
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        path = parsed.path or "/"
+        if parsed.query:
+            path += "?" + parsed.query
+        raw = _socks5_connect(host, port, sport=cfg.socks_port, timeout=15)
+        if parsed.scheme == "https":
+            ctx = ssl.create_default_context()
+            sock = ctx.wrap_socket(raw, server_hostname=host)
+        else:
+            sock = raw
+        try:
+            req = (f"GET {path} HTTP/1.1\r\nHost: {host}\r\n"
+                   f"User-Agent: torchain/6\r\nConnection: close\r\nAccept: application/json,*/*\r\n\r\n")
+            sock.sendall(req.encode())
+            buf = b""
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                buf += chunk
+        finally:
+            sock.close()
+        head, _, payload = buf.partition(b"\r\n\r\n")
+        body = payload.decode("utf-8", "replace")
+    except Exception as socks_err:
+        log.debug("fetch via Tor SOCKS proxy failed (%s); trying fallback only if Tor inactive", socks_err)
+        # If Tor is active, do NOT fall back to clearnet as it leaks real IP
+        if cfg.active:
+            raise ConfigError(
+                f"could not fetch bridges via Tor SOCKS proxy from {source}",
+                hint=f"Tor SOCKS error: {socks_err}. Refusing clearnet leak while Tor is active.",
+            ) from socks_err
+        try:
+            with urllib.request.urlopen(source, timeout=15) as resp:
+                body = resp.read().decode("utf-8")
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            raise ConfigError(
+                f"could not fetch bridges from {source}",
+                hint=f"Network error: {exc}. Check your connection or specify a custom URL.",
+            ) from exc
 
     lines: list[str] = []
     try:
@@ -201,7 +268,7 @@ def _extract_addr(line: str) -> tuple[str, int] | None:
     return None
 
 
-def _test_single_bridge(line: str, timeout: float = 5.0) -> tuple[str, bool, str]:
+def _test_single_bridge(line: str, timeout: float = 5.0, *, sport: int | None = None) -> tuple[str, bool, str]:
     line_clean = re.sub(r"^(?:bridge\s+)", "", line.strip(), flags=re.I)
     # Pluggable transports using dummy/placeholder addresses cannot be TCP-pinged directly.
     for pt in ("snowflake", "meek_lite", "webtunnel"):
@@ -213,7 +280,10 @@ def _test_single_bridge(line: str, timeout: float = 5.0) -> tuple[str, bool, str
         return line, False, "no IP:port found"
     host, port = addr
     try:
-        sock = socket.create_connection((host, port), timeout=timeout)
+        if sport is not None:
+            sock = _socks5_connect(host, port, sport=sport, timeout=timeout)
+        else:
+            sock = socket.create_connection((host, port), timeout=timeout)
         sock.close()
         return line, True, f"{host}:{port} reachable"
     except OSError as exc:
@@ -223,14 +293,24 @@ def _test_single_bridge(line: str, timeout: float = 5.0) -> tuple[str, bool, str
 def test_bridges(bridge_lines: list[str] | None = None,
                  cfg: Config | None = None, *,
                  timeout: float = 5.0) -> list[tuple[str, bool, str]]:
-    """TCP-ping each bridge in parallel and return ``(line, alive, info)`` tuples."""
+    """Check each bridge in parallel without leaking real IP."""
+    cfg = cfg or config_mod.load()
     if bridge_lines is None:
-        cfg = cfg or config_mod.load()
         bridge_lines = cfg.custom_bridges
     if not bridge_lines:
         return []
+
+    # Check if Tor is running/active so we test via Tor proxy or protect real IP
+    from . import engine
+    st = engine.status(cfg)
+    sport = cfg.socks_port if (st.tor_running or cfg.active) else None
+
+    # If Tor is active or killswitch is armed, never probe clearnet directly
+    if cfg.active and sport is None:
+        return [(line, False, "testing disabled while Tor is stopping to prevent leaks") for line in bridge_lines]
+
     max_workers = min(10, len(bridge_lines))
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(_test_single_bridge, line, timeout) for line in bridge_lines]
+        futures = [executor.submit(_test_single_bridge, line, timeout, sport=sport) for line in bridge_lines]
         return [f.result() for f in futures]
 

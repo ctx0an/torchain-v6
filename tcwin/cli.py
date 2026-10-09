@@ -49,7 +49,7 @@ def _enable_vt() -> bool:
 
 
 def _c(text: str, color: str) -> str:
-    if not (_COLOR and sys.stdout.isatty()):
+    if not (_COLOR and sys.stdout and getattr(sys.stdout, "isatty", lambda: False)()):
         return text
     return f"{_C.get(color, '')}{text}{_C['r']}"
 
@@ -65,7 +65,7 @@ def _print_status(st: engine.Status) -> None:
 
 
 def _progress_printer(pct: int) -> None:
-    if sys.stderr.isatty():
+    if sys.stderr and getattr(sys.stderr, "isatty", lambda: False)():
         bar = "█" * (pct // 5) + "░" * (20 - pct // 5)
         sys.stderr.write(f"\r  bootstrapping [{bar}] {pct:3d}%")
         sys.stderr.flush()
@@ -121,9 +121,10 @@ def cmd_repair(args) -> int:
 
 def cmd_pandora(args) -> int:
     if not getattr(args, "yes", False):
-        sys.stderr.write(_c(
-            "PANDORA will block ALL traffic, securely wipe torchain state, "
-            "and scrub memory.\n", "amber"))
+        if sys.stderr is not None:
+            sys.stderr.write(_c(
+                "PANDORA will block ALL traffic, securely wipe torchain state, "
+                "and scrub memory.\n", "amber"))
         try:
             ans = input("Type 'pandora' to confirm: ").strip().lower()
         except EOFError:
@@ -405,6 +406,8 @@ def main(argv=None) -> int:
         except Exception:
             pass
     argv = list(sys.argv[1:] if argv is None else argv)
+    if not argv:
+        argv = ["gui"]
     parser = build_parser()
     args = parser.parse_args(argv)
     _COLOR = _enable_vt()
@@ -412,8 +415,10 @@ def main(argv=None) -> int:
     try:
         return args.fn(args)
     except TorChainError as exc:
-        print(_c("✗ ", "red") + exc.render(), file=sys.stderr)
+        if sys.stderr is not None:
+            print(_c("✗ ", "red") + exc.render(), file=sys.stderr)
         return exc.exit_code
     except KeyboardInterrupt:
-        print("\ninterrupted", file=sys.stderr)
+        if sys.stderr is not None:
+            print("\ninterrupted", file=sys.stderr)
         return 130

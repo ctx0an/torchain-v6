@@ -7,6 +7,20 @@ from unittest.mock import MagicMock, patch
 # Ensure repo root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 
+if sys.platform == "win32":
+    import types
+    if "pwd" not in sys.modules:
+        pwd_mock = types.ModuleType("pwd")
+        pwd_mock.getpwnam = MagicMock(return_value=MagicMock(pw_uid=1000))
+        sys.modules["pwd"] = pwd_mock
+    if "fcntl" not in sys.modules:
+        fcntl_mock = types.ModuleType("fcntl")
+        fcntl_mock.LOCK_EX = 1
+        fcntl_mock.LOCK_NB = 2
+        fcntl_mock.LOCK_UN = 4
+        fcntl_mock.flock = MagicMock()
+        sys.modules["fcntl"] = fcntl_mock
+
 
 class TestTorrcOptimization(unittest.TestCase):
     def test_tc4_torrc_performance_directives(self):
@@ -17,7 +31,8 @@ class TestTorrcOptimization(unittest.TestCase):
         self.assertIn("OptimisticData 1", content)
         self.assertIn("LearnCircuitBuildTimeout 1", content)
         self.assertNotIn("LearnCircuitBuildTimeout 0", content)
-        self.assertIn("NumEntryGuards 1", content)
+        self.assertIn("SafeLogging 1", content)
+        self.assertNotIn("NumEntryGuards 1", content)
         self.assertIn("KeepalivePeriod 120", content)
         self.assertIn("VirtualAddrNetworkIPv4 10.192.0.0/10", content)
 
@@ -29,7 +44,8 @@ class TestTorrcOptimization(unittest.TestCase):
         self.assertIn("OptimisticData 1", content)
         self.assertIn("LearnCircuitBuildTimeout 1", content)
         self.assertNotIn("LearnCircuitBuildTimeout 0", content)
-        self.assertIn("NumEntryGuards 1", content)
+        self.assertIn("SafeLogging 1", content)
+        self.assertNotIn("NumEntryGuards 1", content)
         self.assertIn("KeepalivePeriod 120", content)
         self.assertIn("VirtualAddrNetworkIPv4 10.192.0.0/10", content)
 
@@ -42,7 +58,8 @@ class TestLinuxFirewallOnionRouting(unittest.TestCase):
         with patch("tc4.firewall.which", return_value="/sbin/iptables"), \
              patch("tc4.firewall.down"), \
              patch("tc4.firewall._tor_uid", return_value="1001"), \
-             patch("tc4.firewall._ipt") as mock_ipt:
+             patch("tc4.firewall._ipt") as mock_ipt, \
+             patch("tc4.firewall._ipt6"):
             firewall.up(cfg, "tor")
 
         calls = [tuple(call.args) for call in mock_ipt.call_args_list]

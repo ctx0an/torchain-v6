@@ -13,11 +13,36 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import struct
 
-from . import DATA_DIR, SOCKS_PORT
+from . import DATA_DIR, HTTP_PORT, SOCKS_PORT
 from .log import get_logger
 
 log = get_logger()
+
+
+def _pack_connection_settings(server: str, bypass: str = "<local>") -> bytes:
+    """Pack manual proxy configuration into Windows Connections binary format."""
+    server_bytes = server.encode("ascii", "ignore")
+    bypass_bytes = bypass.encode("ascii", "ignore")
+    blob = bytearray()
+    blob.extend(struct.pack("<III", 70, 1, 3))  # 70 bytes min header, counter 1, flags 3 (manual proxy)
+    blob.extend(struct.pack("<I", len(server_bytes)))
+    blob.extend(server_bytes)
+    blob.extend(struct.pack("<I", len(bypass_bytes)))
+    blob.extend(bypass_bytes)
+    blob.extend(b"\x00" * 36)
+    return bytes(blob)
+
+
+def _pack_direct_settings() -> bytes:
+    """Pack direct (no proxy) configuration into Windows Connections binary format."""
+    blob = bytearray()
+    blob.extend(struct.pack("<III", 70, 1, 1))  # flags 1 = direct connection
+    blob.extend(struct.pack("<I", 0))
+    blob.extend(struct.pack("<I", 0))
+    blob.extend(b"\x00" * 36)
+    return bytes(blob)
 
 try:
     import winreg  # type: ignore
@@ -108,14 +133,17 @@ def _save_current() -> None:
         log.debug("could not save proxy state: %s", exc)
 
 
-def enable(socks_port: int = SOCKS_PORT) -> None:
-    """Point the WinINET proxy at the local tor SOCKS port."""
+def enable(socks_port: int = SOCKS_PORT, http_port: int = HTTP_PORT) -> None:
+    """Point the WinINET proxy at the local tor HTTP tunnel and SOCKS ports."""
     if winreg is None:
         return
     if not os.path.exists(_STATE):
         _save_current()
-    server = f"socks=127.0.0.1:{socks_port}"
-    
+    # Configure both HTTP/HTTPS tunnel (for browser web traffic + remote DNS)
+    # and SOCKS (for other tools).
+    server = f"http=127.0.0.1:{http_port};https=127.0.0.1:{http_port};socks=127.0.0.1:{socks_port}"
+    conn_blob = _pack_connection_settings(server)
+
     for root, subkey in _get_user_keys(write_access=True):
         path = f"{subkey}\\{_KEY}".strip("\\")
         try:
@@ -128,13 +156,13 @@ def enable(socks_port: int = SOCKS_PORT) -> None:
                     pass
             try:
                 with winreg.OpenKey(root, path + "\\Connections", 0, winreg.KEY_SET_VALUE) as ck:
-                    winreg.DeleteValue(ck, "DefaultConnectionSettings")
-                    winreg.DeleteValue(ck, "SavedLegacySettings")
+                    winreg.SetValueEx(ck, "DefaultConnectionSettings", 0, winreg.REG_BINARY, conn_blob)
+                    winreg.SetValueEx(ck, "SavedLegacySettings", 0, winreg.REG_BINARY, conn_blob)
             except OSError:
                 pass
         except OSError as exc:
             log.debug("failed to set proxy for key %s\\%s: %s", root, path, exc)
-            
+
     _refresh()
     log.info("system proxy set to %s", server)
 
@@ -149,7 +177,7 @@ def disable() -> None:
             prev = json.load(fh)
     except (OSError, json.JSONDecodeError):
         prev = {}
-        
+
     for root, subkey in _get_user_keys(write_access=True):
         key_repr = subkey if subkey else "HKCU"
         path = f"{subkey}\\{_KEY}".strip("\\")
@@ -180,24 +208,18 @@ def disable() -> None:
                     if dcs:
                         winreg.SetValueEx(ck, "DefaultConnectionSettings", 0, winreg.REG_BINARY, bytes.fromhex(dcs))
                     else:
-                        try:
-                            winreg.DeleteValue(ck, "DefaultConnectionSettings")
-                        except OSError:
-                            pass
-                            
+                        winreg.SetValueEx(ck, "DefaultConnectionSettings", 0, winreg.REG_BINARY, _pack_direct_settings())
+
                     sls = user_prev.get("SavedLegacySettings")
                     if sls:
                         winreg.SetValueEx(ck, "SavedLegacySettings", 0, winreg.REG_BINARY, bytes.fromhex(sls))
                     else:
-                        try:
-                            winreg.DeleteValue(ck, "SavedLegacySettings")
-                        except OSError:
-                            pass
+                        winreg.SetValueEx(ck, "SavedLegacySettings", 0, winreg.REG_BINARY, _pack_direct_settings())
             except OSError:
                 pass
         except OSError:
             pass
-            
+
     _refresh()
     try:
         os.remove(_STATE)
@@ -206,7 +228,7 @@ def disable() -> None:
     log.info("system proxy restored")
 
 
-def is_set(socks_port: int = SOCKS_PORT) -> bool:
+def is_set(socks_port: int = SOCKS_PORT, http_port: int = HTTP_PORT) -> bool:
     if winreg is None:
         return False
     for root, subkey in _get_user_keys(write_access=False):
@@ -214,8 +236,8 @@ def is_set(socks_port: int = SOCKS_PORT) -> bool:
         try:
             with winreg.OpenKey(root, path, 0, winreg.KEY_READ) as k:
                 enable_val = _read_val(k, "ProxyEnable")
-                server_val = _read_val(k, "ProxyServer")
-                if bool(enable_val) and str(socks_port) in str(server_val or ""):
+                server_val = str(_read_val(k, "ProxyServer") or "")
+                if bool(enable_val) and (str(socks_port) in server_val or str(http_port) in server_val):
                     return True
         except OSError:
             pass

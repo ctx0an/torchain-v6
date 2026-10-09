@@ -23,11 +23,7 @@ private val Context.dataStore: DataStore<Preferences>
     get() = synchronized(dataStoreLock) {
         cachedDataStore ?: PreferenceDataStoreFactory.create(
             produceFile = {
-                val storageContext = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    applicationContext.createDeviceProtectedStorageContext()
-                } else {
-                    applicationContext
-                }
+                val storageContext = applicationContext
                 File(storageContext.filesDir, "datastore/torchain_prefs.preferences_pb")
             }
         ).also { cachedDataStore = it }

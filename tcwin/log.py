@@ -51,10 +51,12 @@ def setup_logging(verbose: bool = False, to_file: bool = True) -> logging.Logger
     logger.setLevel(logging.DEBUG if verbose else logging.INFO)
     logger.propagate = False
 
-    console = logging.StreamHandler(sys.stderr)
-    console.setLevel(logging.DEBUG if verbose else logging.INFO)
-    console.setFormatter(_ColorFormatter(color=sys.stderr.isatty()))
-    logger.addHandler(console)
+    if sys.stderr is not None:
+        console = logging.StreamHandler(sys.stderr)
+        console.setLevel(logging.DEBUG if verbose else logging.INFO)
+        is_atty = bool(getattr(sys.stderr, "isatty", lambda: False)())
+        console.setFormatter(_ColorFormatter(color=is_atty))
+        logger.addHandler(console)
 
     if to_file:
         try:

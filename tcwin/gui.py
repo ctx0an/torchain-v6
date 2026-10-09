@@ -70,6 +70,10 @@ class TorChainGUI:
         )
         self._boot_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
 
+        # Handle clean window closing
+        self._closing = False
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
         # Start light pollers.
         self.root.after(200, self._drain_events)
         self.root.after(400, self._poll_status)
@@ -736,6 +740,8 @@ class TorChainGUI:
         threading.Thread(target=task, daemon=True).start()
 
     def _drain_events(self):
+        if getattr(self, "_closing", False):
+            return
         try:
             while True:
                 kind, cb, result, err = self._events.get_nowait()
@@ -750,7 +756,8 @@ class TorChainGUI:
                     cb(result)
         except queue.Empty:
             pass
-        self.root.after(120, self._drain_events)
+        if not getattr(self, "_closing", False):
+            self.root.after(120, self._drain_events)
 
     def _notify(self, exc):
         msg = exc.render() if isinstance(exc, TorChainError) else str(exc)
@@ -866,9 +873,15 @@ class TorChainGUI:
             self.root.after(1500, lambda: self._run_worker(engine.status, self._apply_status))
 
     def _repair_to(self, label):
+        if not self._confirm(
+                "Repair Internet Connectivity",
+                "This will remove torchain firewall rules and restore default outbound network access. "
+                "If Tor is currently active, it will be stopped first to prevent leaks. Proceed?"):
+            return
         if self._elevate(["repair"], "Repair Internet"):
             label.configure(
                 text="Repairing internet… (see Logs for details)", fg=P.text_dim)
+            self.root.after(1500, lambda: self._run_worker(engine.status, self._apply_status))
 
     def _refresh_circuits(self):
         def load():
@@ -935,9 +948,19 @@ class TorChainGUI:
     # Status polling (cheap)
     # ------------------------------------------------------------------
     def _poll_status(self):
+        if getattr(self, "_closing", False):
+            return
         if not self._busy:
             self._run_worker(engine.status, self._apply_status)
-        self.root.after(2000, self._poll_status)
+        if not getattr(self, "_closing", False):
+            self.root.after(2000, self._poll_status)
+
+    def _on_close(self):
+        self._closing = True
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
 
     def _apply_status(self, st):
         if st is None:

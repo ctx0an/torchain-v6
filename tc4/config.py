@@ -76,9 +76,11 @@ def load() -> Config:
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as fh:
             data = json.load(fh)
-    except PermissionError:
-        # Unprivileged session (e.g. testing GUI locally): fallback gracefully to defaults
-        return Config()
+    except PermissionError as exc:
+        raise ConfigError(
+            f"permission denied reading config at {CONFIG_FILE}: run with sudo",
+            hint="Run the command with root/sudo privileges.",
+        ) from exc
     except (OSError, json.JSONDecodeError) as exc:
         raise ConfigError(
             f"could not read config at {CONFIG_FILE}: {exc}",

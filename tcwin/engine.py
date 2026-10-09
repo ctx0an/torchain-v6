@@ -103,10 +103,40 @@ def _tor_dir() -> str | None:
     return os.path.dirname(exe) if exe else None
 
 
+def _secure_path_permissions(target_path: str, is_dir: bool = True) -> None:
+    """Restrict access permissions to SYSTEM and Administrators (and current user) using icacls."""
+    if not which("icacls"):
+        return
+    import getpass
+    curr_user = getpass.getuser()
+    perm_spec = "(OI)(CI)F" if is_dir else "F"
+    grants = [
+        f"/grant:r", "*S-1-5-18:" + perm_spec,      # SYSTEM
+        f"/grant:r", "*S-1-5-32-544:" + perm_spec,  # Administrators
+    ]
+    if curr_user:
+        grants.extend([f"/grant:r", f"{curr_user}:{perm_spec}"])
+    run_ok(["icacls", target_path, "/inheritance:r", *grants])
+
+
 def _ensure_dirs() -> None:
     tor_data = os.path.join(DATA_DIR, "tor")
     for d in (CONFIG_DIR, DATA_DIR, LOG_DIR, RUN_DIR, tor_data):
         os.makedirs(d, exist_ok=True)
+    _secure_path_permissions(tor_data, is_dir=True)
+    _secure_path_permissions(CONFIG_DIR, is_dir=True)
+
+
+def _protect_tor_credentials() -> None:
+    """Secure the control auth cookie and other sensitive data files inside Tor data dir."""
+    tor_data = os.path.join(DATA_DIR, "tor")
+    if os.path.isdir(tor_data):
+        _secure_path_permissions(tor_data, is_dir=True)
+        cookie_file = os.path.join(tor_data, "control_auth_cookie")
+        if os.path.isfile(cookie_file):
+            _secure_path_permissions(cookie_file, is_dir=False)
+        if os.path.isfile(TORRC_FILE):
+            _secure_path_permissions(TORRC_FILE, is_dir=False)
 
 
 def _read_pid() -> int | None:
@@ -177,13 +207,19 @@ def start(cfg: Config | None = None, *, on_progress=None, supervise: bool = True
             spoof.spoof_mac()
         if cfg.spoof_hostname:
             spoof.spoof_hostname()
+        # Engage firewall before launching Tor process to prevent any leak window
+        tor_bin = find_tor()
+        if not tor_bin:
+            raise DependencyError(
+                "tor.exe was not found",
+                hint="Run windows\\setup.bat to extract the bundled Tor, "
+                     "or set TORCHAIN_TOR to the full path of tor.exe.")
+        firewall.up(cfg, tor_bin)
+
         pid = _read_pid()
         if not pid_alive(pid):
             pid = _start_tor(cfg)
             started_tor = True
-
-        # Engage firewall early to prevent leaks during bootstrapping
-        firewall.up(cfg, find_tor())
 
         ok = wait_bootstrap(timeout=90, on_progress=on_progress, check_pid=pid)
         if not ok:
@@ -192,7 +228,8 @@ def start(cfg: Config | None = None, *, on_progress=None, supervise: bool = True
                                hint="Check for port conflicts (is another Tor instance running?) or logs in tor.log.")
             raise TorError("tor did not finish bootstrapping in time",
                            hint="Check your connection or enable bridges.")
-        proxy.enable(cfg.socks_port)
+        _protect_tor_credentials()
+        proxy.enable(cfg.socks_port, getattr(cfg, "http_port", 9080))
         proxy_set = True
         cfg.active = True
         config_mod.save(cfg)
@@ -203,8 +240,8 @@ def start(cfg: Config | None = None, *, on_progress=None, supervise: bool = True
                 log.warning("watchdog could not start: %s", exc)
         log.info("torchain is active")
         return status(cfg)
-    except Exception:
-        log.error("start failed; rolling back")
+    except Exception as exc:
+        log.error("start failed; rolling back: %s", exc)
         try:
             firewall.down(cfg, quiet=True)
         finally:
@@ -285,10 +322,25 @@ def restart(cfg: Config | None = None, *, on_progress=None) -> Status:
     return start(cfg, on_progress=on_progress)
 
 
-def newnym() -> None:
+_LAST_NEWNYM_TIME: float = 0.0
+
+
+def newnym(min_interval: float = 10.0) -> bool:
+    """Request a new Tor identity via NEWNYM signal with rate-limiting and lifecycle checks."""
+    global _LAST_NEWNYM_TIME
+    st = status()
+    if not st.tor_running:
+        log.warning("cannot request new identity: Tor is not running")
+        return False
+    now = time.time()
+    if now - _LAST_NEWNYM_TIME < min_interval:
+        log.debug("newnym called too quickly; throttled (wait %.1fs)", min_interval - (now - _LAST_NEWNYM_TIME))
+        return False
     with ControlClient() as c:
         c.newnym()
+    _LAST_NEWNYM_TIME = now
     log.info("requested a new tor identity")
+    return True
 
 
 def status(cfg: Config | None = None) -> Status:

@@ -10,6 +10,8 @@ for abi in "${ABIS[@]}"; do mkdir -p "$JNIDIR/$abi"; done
 mkdir -p "$ASSETS"
 
 ORBOT_URL="https://github.com/guardianproject/orbot-android/releases/download/17.9.5-RC-1-tor-0.4.9.9/Orbot-17.9.5-RC-1-tor-0.4.9.9-fullperm-universal-release.apk"
+EXPECTED_SHA256="9a5ac9d74d0ff0774ae58ed016cd2cb714fb03f11786e3becfadbefe2429421c"
+
 echo "==> Downloading Orbot universal APK (ships tor 0.4.9.9)..."
 echo "    $ORBOT_URL"
 if ! curl -sSL --fail --max-time 180 -o "$TMP/orbot.apk" "$ORBOT_URL"; then
@@ -17,6 +19,16 @@ if ! curl -sSL --fail --max-time 180 -o "$TMP/orbot.apk" "$ORBOT_URL"; then
   exit 1
 fi
 echo "    downloaded: $(du -h "$TMP/orbot.apk" | cut -f1)"
+
+echo "==> Verifying SHA-256 checksum..."
+ACTUAL_SHA256="$(sha256sum "$TMP/orbot.apk" | cut -d' ' -f1)"
+if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
+  echo "ERROR: SHA-256 mismatch! File integrity check failed." >&2
+  echo "  Expected: $EXPECTED_SHA256" >&2
+  echo "  Actual:   $ACTUAL_SHA256" >&2
+  exit 1
+fi
+echo "    Checksum OK: $ACTUAL_SHA256"
 
 echo "==> Extracting libtor.so + libhev-socks5-tunnel.so + geoip databases..."
 cd "$TMP"

@@ -28,15 +28,23 @@ object BridgeManager {
         return Bridge(transport = transport, line = trimmed)
     }
 
+    private const val TOR_SOCKS_PORT = 9050
+
     suspend fun fetch(transport: BridgeTransport): List<String> = withContext(Dispatchers.IO) {
         try {
-            // Using the correct builtin endpoint instead of the non-existent options endpoint
             val url = URL("https://bridges.torproject.org/moat/circumvention/builtin")
-            val con = url.openConnection() as HttpsURLConnection
+            val proxy = java.net.Proxy(java.net.Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", TOR_SOCKS_PORT))
+            val con = (try {
+                url.openConnection(proxy) as HttpsURLConnection
+            } catch (_: Exception) {
+                // If Tor SOCKS proxy isn't available, don't leak clearnet IP; use bundled defaults
+                Logger.i("bridge-fetch", "Tor SOCKS proxy unavailable, using bundled default bridges to prevent IP leak")
+                return@withContext defaultBridges(transport)
+            })
             con.requestMethod = "GET"
             con.setRequestProperty("Accept", "application/vnd.api+json")
-            con.connectTimeout = 15000
-            con.readTimeout = 20000
+            con.connectTimeout = 10000
+            con.readTimeout = 15000
             
             if (con.responseCode !in 200..299) {
                 Logger.w("bridge-fetch", "Moat API returned HTTP ${con.responseCode} for builtin bridges")
@@ -112,42 +120,9 @@ object BridgeManager {
         withContext(Dispatchers.IO) {
             val parsed = parse(line) ?: return@withContext false to -1L
             val transport = parsed.transport.lowercase()
-            if (transport == "snowflake" || transport.startsWith("meek")) {
-                val start = System.currentTimeMillis()
-                try {
-                    val params = parsed.line.split(' ').filter { it.contains('=') }.associate {
-                        val parts = it.split('=', limit = 2)
-                        parts[0] to parts[1]
-                    }
-                    val targetUrlStr = if (params.containsKey("front") && params["front"]?.isNotBlank() == true) {
-                        val frontVal = params["front"]!!
-                        if (frontVal.startsWith("http")) frontVal else "https://$frontVal"
-                    } else {
-                        params["url"] ?: ""
-                    }
-                    if (targetUrlStr.isBlank()) {
-                        return@withContext false to -1L
-                    }
-                    val url = URL(targetUrlStr)
-                    val con = url.openConnection() as HttpsURLConnection
-                    con.requestMethod = "GET"
-                    con.connectTimeout = timeoutMs
-                    con.readTimeout = timeoutMs
-                    if (params.containsKey("front") && params.containsKey("url")) {
-                        try {
-                            val brokerHost = URL(params["url"]!!).host
-                            con.setRequestProperty("Host", brokerHost)
-                        } catch (e: Exception) {
-                            // ignore invalid URL in url param
-                        }
-                    }
-                    con.connect()
-                    val code = con.responseCode
-                    true to (System.currentTimeMillis() - start)
-                } catch (e: Exception) {
-                    Logger.d("bridge-test", "ping Snowflake/Meek failed: ${e.message}")
-                    false to -1L
-                }
+            if (transport == "snowflake" || transport.startsWith("meek") || transport == "webtunnel") {
+                // Pluggable transports use broker/domain-fronting or proxies; do not leak clearnet requests
+                return@withContext true to 0L
             } else {
                 val words = parsed.line.split(' ').filter { it.isNotBlank() }
                 val hostPortStr = words.firstOrNull { it.contains(':') } ?: return@withContext false to -1L
@@ -156,8 +131,15 @@ object BridgeManager {
                 val port = hp.getOrNull(1)?.toIntOrNull() ?: return@withContext false to -1L
                 val start = System.currentTimeMillis()
                 try {
-                    Socket().use { s -> s.connect(InetSocketAddress(host, port), timeoutMs) }
-                    true to (System.currentTimeMillis() - start)
+                    val s = try {
+                        val proxy = java.net.Proxy(java.net.Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", TOR_SOCKS_PORT))
+                        Socket(proxy).apply { connect(InetSocketAddress(host, port), timeoutMs) }
+                    } catch (_: Exception) {
+                        Socket().apply { connect(InetSocketAddress(host, port), timeoutMs) }
+                    }
+                    s.use {
+                        true to (System.currentTimeMillis() - start)
+                    }
                 } catch (e: Exception) {
                     Logger.d("bridge-test", "test $host:$port failed: ${e.message}")
                     false to -1L

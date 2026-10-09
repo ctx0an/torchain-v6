@@ -112,12 +112,12 @@ def build(cfg: Config, tor_user: str | None = None) -> str:
         "CookieAuthentication 1",
         f"DataDirectory {tor_data}",
         "AvoidDiskWrites 1",
+        "SafeLogging 1",
         # High performance and adaptive circuit tuning
         "OptimisticData 1",
         "LearnCircuitBuildTimeout 1",
         "KeepalivePeriod 120",
         "NewCircuitPeriod 120",
-        "NumEntryGuards 1",
     ]
     if tor_user:
         lines.append(f"User {tor_user}")
@@ -136,8 +136,13 @@ def build(cfg: Config, tor_user: str | None = None) -> str:
 def write(cfg: Config, path: str, tor_user: str | None = None) -> None:
     content = build(cfg, tor_user)
     tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(content)
         fh.flush()
         os.fsync(fh.fileno())
     os.replace(tmp, path)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass

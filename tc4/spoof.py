@@ -26,8 +26,13 @@ _STATE = os.path.join(DATA_DIR, "spoof_state.json")
 
 def _save_state(state: dict) -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
-    with open(_STATE, "w", encoding="utf-8") as fh:
+    fd = os.open(_STATE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
         json.dump(state, fh)
+    try:
+        os.chmod(_STATE, 0o600)
+    except OSError:
+        pass
 
 
 def _load_state() -> dict:

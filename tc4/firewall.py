@@ -52,13 +52,32 @@ def _ipt6(*args: str, check: bool = True):
 
 
 def up(cfg: Config, tor_user: str) -> None:
-    """Apply transparent-proxy rules. Idempotent: tears down first."""
+    """Apply transparent-proxy rules. Insert filter drop rule FIRST before nat rules."""
     if which("iptables") is None:
         raise FirewallError("iptables not installed")
-    down(cfg, quiet=True)
     uid = _tor_uid(tor_user)
     trans, dns = str(cfg.trans_port), str(cfg.dns_port)
     try:
+        # --- FILTER FIRST: establish fail-closed egress barrier BEFORE nat redirection ---
+        _ipt("-N", "TORCHAIN_OUT", check=False)
+        _ipt("-F", "TORCHAIN_OUT")
+        _ipt("-A", "TORCHAIN_OUT", "-m", "state", "--state",
+             "ESTABLISHED,RELATED", "-j", "ACCEPT")
+        _ipt("-A", "TORCHAIN_OUT", "-m", "owner", "--uid-owner", uid, "-j", "ACCEPT")
+        _ipt("-A", "TORCHAIN_OUT", "-o", "lo", "-j", "ACCEPT")
+        # Allow .onion virtual address range to tor transport before _NON_TOR bypass.
+        _ipt("-A", "TORCHAIN_OUT", "-d", "10.192.0.0/10", "-p", "tcp", "-j", "ACCEPT")
+        for net in _NON_TOR:
+            _ipt("-A", "TORCHAIN_OUT", "-d", net, "-j", "ACCEPT")
+        # Allow already-redirected traffic to reach tor's ports strictly on loopback (lo / 127.0.0.1)
+        _ipt("-A", "TORCHAIN_OUT", "-o", "lo", "-d", "127.0.0.1", "-p", "tcp", "--dport", trans, "-j", "ACCEPT")
+        _ipt("-A", "TORCHAIN_OUT", "-o", "lo", "-d", "127.0.0.1", "-p", "udp", "--dport", dns, "-j", "ACCEPT")
+        _ipt("-A", "TORCHAIN_OUT", "-j", "DROP")
+
+        # Ensure jump exists in OUTPUT chain for TORCHAIN_OUT
+        if not run_ok(["iptables", "-C", "OUTPUT", "-j", "TORCHAIN_OUT"]):
+            _ipt("-I", "OUTPUT", "1", "-j", "TORCHAIN_OUT")
+
         # --- NAT: redirect DNS + TCP into tor ---
         _ipt("-t", "nat", "-N", "TORCHAIN", check=False)
         _ipt("-t", "nat", "-F", "TORCHAIN")
@@ -73,24 +92,9 @@ def up(cfg: Config, tor_user: str) -> None:
             _ipt("-t", "nat", "-A", "TORCHAIN", "-d", net, "-j", "RETURN")
         _ipt("-t", "nat", "-A", "TORCHAIN", "-p", "tcp", "--syn",
              "-j", "REDIRECT", "--to-ports", trans)
-        _ipt("-t", "nat", "-A", "OUTPUT", "-j", "TORCHAIN")
 
-        # --- FILTER: fail-closed egress ---
-        _ipt("-N", "TORCHAIN_OUT", check=False)
-        _ipt("-F", "TORCHAIN_OUT")
-        _ipt("-A", "TORCHAIN_OUT", "-m", "state", "--state",
-             "ESTABLISHED,RELATED", "-j", "ACCEPT")
-        _ipt("-A", "TORCHAIN_OUT", "-m", "owner", "--uid-owner", uid, "-j", "ACCEPT")
-        _ipt("-A", "TORCHAIN_OUT", "-o", "lo", "-j", "ACCEPT")
-        # Allow .onion virtual address range to tor transport before _NON_TOR bypass.
-        _ipt("-A", "TORCHAIN_OUT", "-d", "10.192.0.0/10", "-p", "tcp", "-j", "ACCEPT")
-        for net in _NON_TOR:
-            _ipt("-A", "TORCHAIN_OUT", "-d", net, "-j", "ACCEPT")
-        # Allow already-redirected traffic to reach tor's ports on loopback.
-        _ipt("-A", "TORCHAIN_OUT", "-p", "tcp", "--dport", trans, "-j", "ACCEPT")
-        _ipt("-A", "TORCHAIN_OUT", "-p", "udp", "--dport", dns, "-j", "ACCEPT")
-        _ipt("-A", "TORCHAIN_OUT", "-j", "DROP")
-        _ipt("-A", "OUTPUT", "-j", "TORCHAIN_OUT")
+        if not run_ok(["iptables", "-t", "nat", "-C", "OUTPUT", "-j", "TORCHAIN"]):
+            _ipt("-t", "nat", "-A", "OUTPUT", "-j", "TORCHAIN")
 
         if cfg.block_ipv6:
             _block_ipv6()
@@ -103,12 +107,13 @@ def up(cfg: Config, tor_user: str) -> None:
 
 def _block_ipv6() -> None:
     if which("ip6tables") is None:
-        return
-    _ipt6("-P", "OUTPUT", "DROP", check=False)
-    _ipt6("-P", "INPUT", "DROP", check=False)
-    _ipt6("-P", "FORWARD", "DROP", check=False)
-    _ipt6("-A", "INPUT", "-i", "lo", "-j", "ACCEPT", check=False)
-    _ipt6("-A", "OUTPUT", "-o", "lo", "-j", "ACCEPT", check=False)
+        raise FirewallError("ip6tables not installed but IPv6 blocking was requested")
+    # Accept loopback before setting drop policies so local IPv6 IPC remains functional
+    _ipt6("-I", "INPUT", "1", "-i", "lo", "-j", "ACCEPT", check=True)
+    _ipt6("-I", "OUTPUT", "1", "-o", "lo", "-j", "ACCEPT", check=True)
+    _ipt6("-P", "OUTPUT", "DROP", check=True)
+    _ipt6("-P", "INPUT", "DROP", check=True)
+    _ipt6("-P", "FORWARD", "DROP", check=True)
 
 
 def _del_all_jumps(table: str, chain: str) -> None:
@@ -152,4 +157,11 @@ def down(cfg: Config, quiet: bool = False) -> None:
 
 
 def is_active() -> bool:
-    return run_ok(["iptables", "-t", "nat", "-n", "-L", "TORCHAIN"])
+    """Check both nat table and filter table fail-closed DROP chain."""
+    nat_active = run_ok(["iptables", "-t", "nat", "-n", "-L", "TORCHAIN"])
+    filter_active = run_ok(["iptables", "-t", "filter", "-n", "-L", "TORCHAIN_OUT"])
+    drop_active = False
+    if filter_active:
+        res = run(["iptables", "-t", "filter", "-S", "TORCHAIN_OUT"], check=False)
+        drop_active = "-j DROP" in res.stdout
+    return nat_active and filter_active and drop_active

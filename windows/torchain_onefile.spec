@@ -116,11 +116,12 @@ exe = EXE(
     strip=False,
     upx=True,
     upx_exclude=[os.path.basename(src) for src, _ in _binaries],
-    console=True,  # CLI mode by default; GUI is launched via 'torchain.exe gui'
+    console=True,
+    hide_console='hide-early',
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,  # icon.py generates the icon procedurally at runtime
+    icon=os.path.join(REPO_ROOT, 'windows', 'torchain.ico'),
 )

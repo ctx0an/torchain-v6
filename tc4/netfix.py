@@ -195,6 +195,19 @@ def _restart_network() -> list[str]:
 
 def repair() -> str:
     """Run the full repair sequence and return a one-line human summary."""
+    from . import config as config_mod
+    from . import engine
+
+    cfg = config_mod.load()
+    st = engine.status(cfg)
+    if cfg.active or st.active or st.tor_running:
+        log.warning("repair requested while Tor is active; stopping Tor first to prevent leaks")
+        try:
+            engine.stop(cfg)
+        except Exception as exc:
+            log.error("failed to stop Tor before repair: %s", exc)
+            return f"Error: Cannot repair network while Tor is active (stop failed: {exc}). Please run 'torchain stop' first."
+
     steps: list[str] = []
     steps += _flush_iptables()
     steps += _restore_dns()

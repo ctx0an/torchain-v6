@@ -26,17 +26,69 @@ class Result:
     detail: str
 
 
-def _socks_opener(port: int):
-    # Pure-stdlib SOCKS5 via a tiny handler would be large; instead we rely on
-    # the transparent firewall already routing us. We still hit a tor-only
-    # check endpoint to confirm exit identity.
-    return urllib.request.build_opener()
+import ssl
 
 
-def _http_json(url: str, timeout: float = 8.0) -> dict:
-    req = urllib.request.Request(url, headers={"User-Agent": "torchain/5"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8", "replace"))
+def _socks5_connect(host: str, port: int, *, sport: int, timeout: float = 10.0) -> socket.socket:
+    """Open a TCP stream to host:port via the local tor SOCKS5 proxy."""
+    s = socket.create_connection(("127.0.0.1", sport), timeout)
+    s.settimeout(timeout)
+    s.sendall(b"\x05\x01\x00")
+    if s.recv(2) != b"\x05\x00":
+        s.close()
+        raise OSError("SOCKS5 handshake rejected")
+    h = host.encode("idna")
+    req = b"\x05\x01\x00\x03" + bytes([len(h)]) + h + port.to_bytes(2, "big")
+    s.sendall(req)
+    rep = s.recv(4)
+    if len(rep) < 2 or rep[1] != 0x00:
+        s.close()
+        raise OSError(f"SOCKS5 connect failed (code {rep[1] if len(rep) > 1 else '?'})")
+    atyp = rep[3] if len(rep) > 3 else 1
+    if atyp == 1:
+        s.recv(4 + 2)
+    elif atyp == 3:
+        ln = s.recv(1)
+        s.recv(ln[0] + 2)
+    elif atyp == 4:
+        s.recv(16 + 2)
+    return s
+
+
+def _http_json_via_tor(host: str, path: str, *, sport: int, timeout: float = 12.0) -> dict:
+    raw = _socks5_connect(host, 443, sport=sport, timeout=timeout)
+    ctx = ssl.create_default_context()
+    sock = ctx.wrap_socket(raw, server_hostname=host)
+    try:
+        req = (f"GET {path} HTTP/1.1\r\nHost: {host}\r\n"
+               "User-Agent: Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0\r\nConnection: close\r\nAccept: application/json,*/*\r\n\r\n")
+        sock.sendall(req.encode())
+        buf = b""
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            buf += chunk
+    finally:
+        sock.close()
+    head, _, body = buf.partition(b"\r\n\r\n")
+    text = body.decode("utf-8", "replace").strip()
+    if b"transfer-encoding: chunked" in head.lower():
+        out = b""
+        rem = body
+        while rem:
+            line, _, rem = rem.partition(b"\r\n")
+            try:
+                size = int(line.strip(), 16)
+            except ValueError:
+                break
+            if size == 0:
+                break
+            out += rem[:size]
+            rem = rem[size + 2:]
+        text = out.decode("utf-8", "replace").strip()
+    start = text.find("{")
+    return json.loads(text[start:]) if start >= 0 else {}
 
 
 def check_firewall() -> Result:
@@ -47,22 +99,31 @@ def check_firewall() -> Result:
 
 def check_tor_exit() -> Result:
     try:
-        data = _http_json("https://check.torproject.org/api/ip")
+        data = _http_json_via_tor("check.torproject.org", "/api/ip", sport=SOCKS_PORT)
     except Exception as exc:  # noqa: BLE001
-        return Result("Tor exit", "warn", f"could not reach check service: {exc}")
+        return Result("Tor exit", "warn", f"could not reach check service via tor: {exc}")
     if data.get("IsTor"):
         return Result("Tor exit", "pass", f"exit IP {data.get('IP', '?')}")
     return Result("Tor exit", "fail", f"NOT routed through tor (IP {data.get('IP','?')})")
 
 
 def check_dns() -> Result:
-    # If DNS resolves through tor's DNSPort, a public name still resolves but
-    # the system resolver must be the local tor one.
+    # If DNS resolves through tor's DNSPort with AutomapHostsOnResolve,
+    # resolving a .onion address succeeds and yields a 10.192.0.0/10 IP.
+    # Regular clearnet DNS (e.g. 8.8.8.8) fails or returns NXDOMAIN.
+    try:
+        ip = socket.gethostbyname("duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion")
+        if ip.startswith("10.192.") or ip.startswith("10."):
+            return Result("DNS resolution", "pass", f"onion automap confirmed ({ip}) via tor DNSPort")
+        return Result("DNS resolution", "warn", f"resolved onion unexpectedly to {ip}")
+    except OSError:
+        pass
+
     try:
         socket.gethostbyname("check.torproject.org")
-        return Result("DNS resolution", "pass", "names resolve via tor DNSPort")
+        return Result("DNS resolution", "pass", "names resolve via redirected DNSPort")
     except OSError as exc:
-        return Result("DNS resolution", "warn", f"resolution failed: {exc}")
+        return Result("DNS resolution", "fail", f"resolution failed: {exc}")
 
 
 def check_ipv6() -> Result:
@@ -78,9 +139,9 @@ def check_ipv6() -> Result:
 
 _CHECKS: list[Callable[[], Result]] = [
     check_firewall,
-    check_ipv6,
     check_dns,
     check_tor_exit,
+    check_ipv6,
 ]
 
 

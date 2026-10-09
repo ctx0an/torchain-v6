@@ -10,7 +10,7 @@ import os
 from dataclasses import asdict, dataclass, field, fields
 from typing import List
 
-from . import CONFIG_DIR, CONFIG_FILE, CONTROL_PORT, DNS_PORT, SOCKS_PORT, TRANS_PORT
+from . import CONFIG_DIR, CONFIG_FILE, CONTROL_PORT, DNS_PORT, HTTP_PORT, SOCKS_PORT, TRANS_PORT
 from .errors import ConfigError
 from .log import get_logger
 
@@ -25,6 +25,7 @@ class Config:
     trans_port: int = TRANS_PORT
     dns_port: int = DNS_PORT
     socks_port: int = SOCKS_PORT
+    http_port: int = HTTP_PORT
     control_port: int = CONTROL_PORT
 
     # Behavior
@@ -53,7 +54,7 @@ class Config:
     last_profile: str = ""
 
     def validate(self) -> None:
-        for p in (self.trans_port, self.dns_port, self.socks_port, self.control_port):
+        for p in (self.trans_port, self.dns_port, self.socks_port, self.http_port, self.control_port):
             if not (1 <= int(p) <= 65535):
                 raise ConfigError(f"invalid port: {p}")
         if self.exit_country and len(self.exit_country) != 2:

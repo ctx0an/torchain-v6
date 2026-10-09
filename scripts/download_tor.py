@@ -1,8 +1,11 @@
+import hashlib
 import os
+import shutil
+import tempfile
 import urllib.request
 import zipfile
-import tempfile
-import shutil
+
+EXPECTED_SHA256 = "9a5ac9d74d0ff0774ae58ed016cd2cb714fb03f11786e3becfadbefe2429421c"
 
 def download_and_extract():
     url = "https://github.com/guardianproject/orbot-android/releases/download/17.9.5-RC-1-tor-0.4.9.9/Orbot-17.9.5-RC-1-tor-0.4.9.9-fullperm-universal-release.apk"
@@ -21,13 +24,29 @@ def download_and_extract():
     with tempfile.TemporaryDirectory() as tmpdir:
         apk_path = os.path.join(tmpdir, "orbot.apk")
         
-        # Download file
+        # Download file and compute hash
+        hasher = hashlib.sha256()
         req = urllib.request.Request(
             url, 
             headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         )
         with urllib.request.urlopen(req) as response, open(apk_path, 'wb') as out_file:
-            shutil.copyfileobj(response, out_file)
+            while True:
+                chunk = response.read(65536)
+                if not chunk:
+                    break
+                hasher.update(chunk)
+                out_file.write(chunk)
+
+        actual_sha256 = hasher.hexdigest().lower()
+        print(f"Verifying SHA-256 integrity...")
+        if actual_sha256 != EXPECTED_SHA256.lower():
+            raise ValueError(
+                f"SHA-256 mismatch! Downloaded file is corrupted or untrusted.\n"
+                f"  Expected: {EXPECTED_SHA256}\n"
+                f"  Actual:   {actual_sha256}"
+            )
+        print(f"  Checksum verified: {actual_sha256}")
             
         print("Download complete. Extracting files...")
         

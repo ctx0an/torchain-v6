@@ -65,7 +65,7 @@ def _http_json_via_tor(host: str, path: str, *, sport: int, timeout: float = 12.
     sock = ctx.wrap_socket(raw, server_hostname=host)
     try:
         req = (f"GET {path} HTTP/1.1\r\nHost: {host}\r\n"
-               "User-Agent: torchain/5\r\nConnection: close\r\nAccept: */*\r\n\r\n")
+               "User-Agent: Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0\r\nConnection: close\r\nAccept: application/json,*/*\r\n\r\n")
         sock.sendall(req.encode())
         buf = b""
         while True:

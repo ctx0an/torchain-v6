@@ -41,6 +41,8 @@ class WatchdogService : LifecycleService() {
         return START_STICKY
     }
 
+    private var monitorJob: kotlinx.coroutines.Job? = null
+
     private fun startWatchdog() {
         rotateJob?.cancel()
         rotateJob = lifecycleScope.launch {
@@ -55,10 +57,31 @@ class WatchdogService : LifecycleService() {
                 }
             }
         }
+        monitorJob?.cancel()
+        monitorJob = lifecycleScope.launch {
+            Config.flow(this@WatchdogService).collectLatest { cfg ->
+                if (cfg.proxyMode == "vpn") {
+                    while (true) {
+                        delay(10_000L)
+                        // If VPN mode is configured and Tor is running, verify VPN tunnel is healthy
+                        if (!com.torchain.android.vpn.TorVpnService.isTunnelActive) {
+                            Logger.w("watchdog", "VPN tunnel reported inactive while Tor is active - notifying TorService")
+                            val i = Intent(this@WatchdogService, TorService::class.java).apply {
+                                action = TorService.ACTION_STATUS
+                                putExtra(TorService.EXTRA_STATE, com.torchain.android.data.TorState.Error::class.java.simpleName)
+                                putExtra(TorService.EXTRA_MESSAGE, "Watchdog detected VPN tunnel dropped unexpectedly")
+                            }
+                            try { startService(i) } catch (_: Exception) {}
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private fun stopWatchdog() {
         rotateJob?.cancel()
+        monitorJob?.cancel()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -66,6 +89,7 @@ class WatchdogService : LifecycleService() {
     override fun onBind(intent: Intent): IBinder? { super.onBind(intent); return null }
     override fun onDestroy() {
         rotateJob?.cancel()
+        monitorJob?.cancel()
         try {
             stopForeground(STOP_FOREGROUND_REMOVE)
             val nm = getSystemService(android.app.NotificationManager::class.java)
