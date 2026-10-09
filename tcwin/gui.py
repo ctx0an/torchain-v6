@@ -206,7 +206,7 @@ class TorChainGUI:
 
         tk.Label(self.sidebar_footer, text=CREDIT, bg=P.overlay, fg=P.text_dim,
                  font=font(8, mono=False), anchor="w").pack(fill="x", pady=(3, 0))
-        tk.Label(self.sidebar_footer, text=f"v{__version__}  •  Kali Edition", bg=P.overlay, fg=P.cyan,
+        tk.Label(self.sidebar_footer, text=f"v{__version__}", bg=P.overlay, fg=P.cyan,
                  font=font(8, bold=True, mono=False), anchor="w").pack(fill="x", pady=(2, 0))
 
         # Build all views once; show/hide on demand (cheap, avoids rebuilds).
