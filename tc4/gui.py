@@ -1038,3 +1038,8 @@ def launch() -> int:
     TorChainGUI(root)
     root.mainloop()
     return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(launch())
