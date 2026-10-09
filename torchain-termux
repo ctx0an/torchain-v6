@@ -98,6 +98,9 @@ CookieAuthentication 1
 DNSPort 127.0.0.1:5400
 AutomapHostsOnResolve 1
 AutomapHostsSuffixes .onion,.exit
+OptimisticData 1
+LearnCircuitBuildTimeout 1
+NumEntryGuards 1
 Log notice file $CONF_DIR/tor.log
 Log notice stdout
 EOF
@@ -115,22 +118,46 @@ ClientTransportPlugin snowflake exec $termux_prefix/bin/snowflake-client
 Bridge snowflake 192.0.2.3:80 2B280B23E1107BB62ABFC40DDCC8824814F80A72 fingerprint=2B280B23E1107BB62ABFC40DDCC8824814F80A72 url=https://snowflake-broker.torproject.net/ front=ajax.aspnetcdn.com ice=stun:stun.l.google.com:19302,stun:stun.antisip.com:3478,stun:stun.bluesip.net:3478
 EOF
   elif [ "$btype" = "obfs4" ]; then
-    # Ensure obfs4proxy/lyrebird is installed
-    local termux_prefix="${PREFIX:-/data/data/com.termux/files/usr}"
-    if [ ! -x "$termux_prefix/bin/lyrebird" ] && [ ! -x "$termux_prefix/bin/obfs4proxy" ]; then
-      info "Installing obfs4proxy package..."
-      pkg install -y obfs4proxy
+    local bridges_file="$CONF_DIR/bridges.txt"
+    local has_bridges=0
+    if [ -f "$bridges_file" ] && [ -s "$bridges_file" ]; then
+      while IFS= read -r line || [ -n "$line" ]; do
+        line=$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        [ -z "$line" ] && continue
+        [[ "$line" =~ ^# ]] && continue
+        has_bridges=1
+        break
+      done < "$bridges_file"
     fi
-    local obfs_bin="$termux_prefix/bin/lyrebird"
-    if [ ! -x "$obfs_bin" ]; then
-      obfs_bin="$termux_prefix/bin/obfs4proxy"
-    fi
-    cat << EOF >> "$TORRC_PATH"
+
+    if [ "$has_bridges" -eq 1 ]; then
+      # Ensure obfs4proxy/lyrebird is installed
+      local termux_prefix="${PREFIX:-/data/data/com.termux/files/usr}"
+      if [ ! -x "$termux_prefix/bin/lyrebird" ] && [ ! -x "$termux_prefix/bin/obfs4proxy" ]; then
+        info "Installing obfs4proxy package..."
+        pkg install -y obfs4proxy
+      fi
+      local obfs_bin="$termux_prefix/bin/lyrebird"
+      if [ ! -x "$obfs_bin" ]; then
+        obfs_bin="$termux_prefix/bin/obfs4proxy"
+      fi
+      cat << EOF >> "$TORRC_PATH"
 UseBridges 1
 ClientTransportPlugin obfs4 exec $obfs_bin
-Bridge obfs4 192.95.36.142:443 CF547A53E2E69300F729606880016D41A25AF5DF cert=qD5aDaa5C3vSy6vFC9FObw iat-mode=0
-Bridge obfs4 85.17.30.79:443 FC257DFD0C157EAFE12C5F47A53E2E69300F7296 cert=3XG5aDaa5C3vSy6vFC9FObw iat-mode=0
 EOF
+      while IFS= read -r line || [ -n "$line" ]; do
+        line=$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        [ -z "$line" ] && continue
+        [[ "$line" =~ ^# ]] && continue
+        if [[ "$line" =~ ^[Bb][Rr][Ii][Dd][Gg][Ee] ]]; then
+          echo "$line" >> "$TORRC_PATH"
+        else
+          echo "Bridge $line" >> "$TORRC_PATH"
+        fi
+      done < "$bridges_file"
+    else
+      warn "No obfs4 bridges configured in $bridges_file. Tor will connect directly until you add bridges via: torchain bridge obfs4 '<bridge line>'"
+    fi
   fi
 }
 
@@ -292,9 +319,10 @@ cmd_rotate() {
 
 cmd_bridge() {
   local btype="${1:-}"
+  local custom_val="${2:-}"
   if [ -z "$btype" ]; then
     echo "Current bridge type: $(get_bridge_type)"
-    echo "Usage: torchain bridge [obfs4 | snowflake | none]"
+    echo "Usage: torchain bridge [obfs4 | snowflake | none] [bridge line or file]"
     return
   fi
   
@@ -302,6 +330,15 @@ cmd_bridge() {
     obfs4|snowflake|none)
       mkdir -p "$CONF_DIR"
       echo "$btype" > "$BRIDGE_CONFIG_FILE"
+      if [ "$btype" = "obfs4" ] && [ -n "$custom_val" ]; then
+        if [ -f "$custom_val" ]; then
+          cp -f "$custom_val" "$CONF_DIR/bridges.txt"
+          success "Loaded bridges from file: $custom_val"
+        else
+          echo "$custom_val" > "$CONF_DIR/bridges.txt"
+          success "Configured bridge line in $CONF_DIR/bridges.txt"
+        fi
+      fi
       success "Bridge type set to: $btype"
       if pgrep -x "tor" >/dev/null; then
         info "Restarting Tor to apply bridge configuration..."

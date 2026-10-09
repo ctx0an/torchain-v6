@@ -69,6 +69,9 @@ a = Analysis(
         (os.path.join(REPO_ROOT, 'windows', 'Tor.zip'), 'tor_bundle'),
     ],
     hiddenimports=[
+        'tcwin',
+        'tcwin.animations',
+        'tcwin.portable',
         'tkinter',
         'tkinter.ttk',
         'tkinter.messagebox',

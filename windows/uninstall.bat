@@ -97,13 +97,26 @@ echo %CYAN%  ==^> Deleting torchain firewall rules...%RESET%
 netsh advfirewall firewall delete rule name="torchain-allow-tor" >nul 2>&1
 netsh advfirewall firewall delete rule name="torchain-allow-loopback" >nul 2>&1
 netsh advfirewall firewall delete rule name="torchain-block-ipv6" >nul 2>&1
+for %%p in (lyrebird conjure-client snowflake-client snowflake webtunnel-client webtunnel obfs4proxy) do (
+    netsh advfirewall firewall delete rule name="torchain-allow-pt-%%p" >nul 2>&1
+)
 echo %GREEN%  [ok] Removed torchain firewall rules%RESET%
 
 echo %CYAN%  ==^> Disabling system proxy settings in Registry...%RESET%
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyServer /f >nul 2>&1
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v AutoConfigURL /f >nul 2>&1
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyEnable /t REG_DWORD /d 0 /f >nul 2>&1
-echo %GREEN%  [ok] Registry proxy settings cleared%RESET%
+
+REM Also clear for all loaded user hives under HKEY_USERS (fixes standard user profiles when elevated)
+for /f "tokens=*" %%u in ('reg query "HKEY_USERS" 2^>nul') do (
+    echo %%u | findstr /i /v "_Classes" >nul 2>&1
+    if !errorlevel! equ 0 (
+        reg delete "%%u\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyServer /f >nul 2>&1
+        reg delete "%%u\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v AutoConfigURL /f >nul 2>&1
+        reg add "%%u\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyEnable /t REG_DWORD /d 0 /f >nul 2>&1
+    )
+)
+echo %GREEN%  [ok] Registry proxy settings cleared across all user profiles%RESET%
 
 echo %CYAN%  ==^> Refreshing proxy settings...%RESET%
 powershell -NoProfile -Command "$sig = '[DllImport(' + [char]34 + 'wininet.dll' + [char]34 + ')] public static extern bool InternetSetOption(IntPtr hInternet, int dwOption, IntPtr lpBuffer, int dwBufferLength);'; $wininet = Add-Type -MemberDefinition $sig -Name Win32WinInet -Namespace Win32Functions -PassThru; [void]$wininet::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0); [void]$wininet::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0)" >nul 2>&1

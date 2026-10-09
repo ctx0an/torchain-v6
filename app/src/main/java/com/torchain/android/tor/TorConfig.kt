@@ -36,6 +36,7 @@ object TorConfig {
         add("DNSPort 127.0.0.1:$dnsPort")
         add("AutomapHostsOnResolve 1")
         add("AutomapHostsSuffixes .onion,.exit")
+        add("OptimisticData 1")
         add("LearnCircuitBuildTimeout 1")
         add("NumEntryGuards 1")
         add("KeepalivePeriod 120")

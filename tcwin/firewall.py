@@ -55,11 +55,16 @@ def _find_pt_executables(tor_exe: str) -> list[str]:
             continue
         try:
             for entry in os.listdir(d):
-                if entry.lower().endswith(".exe") and entry.lower() != "tor.exe":
-                    full = os.path.abspath(os.path.join(d, entry))
-                    if full.lower() not in seen:
-                        seen.add(full.lower())
-                        pts.append(full)
+                if not entry.lower().endswith(".exe") or entry.lower() == "tor.exe":
+                    continue
+                base = os.path.splitext(entry)[0].lower()
+                # In tor's own directory, only match known transport binaries to avoid matching utilities like tor-resolve.exe
+                if d == tor_dir and base not in _KNOWN_PT_NAMES:
+                    continue
+                full = os.path.abspath(os.path.join(d, entry))
+                if full.lower() not in seen:
+                    seen.add(full.lower())
+                    pts.append(full)
         except OSError:
             pass
 

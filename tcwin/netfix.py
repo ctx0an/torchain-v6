@@ -32,6 +32,13 @@ _TORCHAIN_RULES = (
     "torchain-allow-tor",
     "torchain-allow-loopback",
     "torchain-block-ipv6",
+    "torchain-allow-pt-lyrebird",
+    "torchain-allow-pt-conjure-client",
+    "torchain-allow-pt-snowflake-client",
+    "torchain-allow-pt-snowflake",
+    "torchain-allow-pt-webtunnel-client",
+    "torchain-allow-pt-webtunnel",
+    "torchain-allow-pt-obfs4proxy",
 )
 
 

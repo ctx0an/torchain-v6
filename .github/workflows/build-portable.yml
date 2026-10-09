@@ -1,4 +1,4 @@
-name: Build Windows Portable
+name: Build Windows Portable & Standalone Executable
 
 on:
   push:
@@ -41,17 +41,29 @@ jobs:
           }
           Write-Host "Tor.zip found: $((Get-Item 'windows\Tor.zip').Length / 1MB) MB"
 
+      - name: Build standalone executable (onefile)
+        run: python -m PyInstaller --noconfirm windows\torchain_onefile.spec
+
+      - name: Verify standalone executable
+        run: |
+          if (!(Test-Path "dist\torchain.exe")) {
+            Write-Error "Standalone torchain.exe not found in dist\"
+            exit 1
+          }
+          $size = (Get-Item "dist\torchain.exe").Length / 1MB
+          Write-Host "dist\torchain.exe: $([math]::Round($size, 1)) MB"
+
       - name: Build portable folder
         run: python -m PyInstaller --noconfirm windows\torchain_portable.spec
 
-      - name: Verify build output
+      - name: Verify folder build output
         run: |
           if (!(Test-Path "dist\torchain\torchain.exe")) {
             Write-Error "torchain.exe not found in dist\torchain\"
             exit 1
           }
           $size = (Get-Item "dist\torchain\torchain.exe").Length / 1MB
-          Write-Host "torchain.exe: $([math]::Round($size, 1)) MB"
+          Write-Host "dist\torchain\torchain.exe: $([math]::Round($size, 1)) MB"
 
           # Check tkinter data dirs exist
           if (Test-Path "dist\torchain\tcl8.6") {
@@ -67,6 +79,13 @@ jobs:
           Compress-Archive -Path "dist\torchain" -DestinationPath "dist\torchain-portable.zip" -Force
           $zipSize = (Get-Item "dist\torchain-portable.zip").Length / 1MB
           Write-Host "torchain-portable.zip: $([math]::Round($zipSize, 1)) MB"
+
+      - name: Upload standalone exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: torchain-windows-exe
+          path: dist/torchain.exe
+          retention-days: 30
 
       - name: Upload portable folder artifact
         uses: actions/upload-artifact@v4
@@ -87,4 +106,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
+            dist/torchain.exe
             dist/torchain-portable.zip

@@ -1,29 +1,40 @@
 @echo off
 setlocal EnableDelayedExpansion
 REM ============================================================================
-REM  torchain - Build portable folder distribution
+REM  torchain - Build Windows distributions (standalone onefile & portable folder)
 REM
-REM  This script uses PyInstaller to bundle the entire tcwin package into a
-REM  portable torchain\ folder that works on any Windows 10/11 machine
-REM  without Python installed.
+REM  This script uses PyInstaller to bundle the entire tcwin package for Windows:
+REM    - Standalone single-file executable: dist\torchain.exe  (--onefile)
+REM    - Portable folder distribution:      dist\torchain\    (folder)
+REM    - Compressed portable archive:       dist\torchain-portable.zip
 REM
-REM  A FOLDER distribution is used (not --onefile) because tkinter's Tcl/Tk
-REM  runtime needs its data directories on disk for the GUI to work.
+REM  Usage:
+REM    windows\build_portable.bat             (builds both onefile & folder)
+REM    windows\build_portable.bat /onefile    (builds only standalone torchain.exe)
+REM    windows\build_portable.bat /folder     (builds only portable folder & zip)
 REM
 REM  Requirements:
 REM    - Python 3.9+ on PATH (or installed via windows\setup.bat)
 REM    - The bundled windows\Tor.zip (already in the repo)
-REM
-REM  Output:
-REM    dist\torchain\       — portable folder (run torchain.exe from here)
-REM    dist\torchain-portable.zip — zipped folder for easy transport
 REM ============================================================================
 
 set "SCRIPTDIR=%~dp0"
 if "%SCRIPTDIR:~-1%"=="\" set "SCRIPTDIR=%SCRIPTDIR:~0,-1%"
 set "REPOROOT=%SCRIPTDIR%\.."
-set "SPECFILE=%SCRIPTDIR%\torchain_portable.spec"
+set "FOLDER_SPEC=%SCRIPTDIR%\torchain_portable.spec"
+set "ONEFILE_SPEC=%SCRIPTDIR%\torchain_onefile.spec"
 set "OUTDIR=%REPOROOT%\dist\torchain"
+set "STANDALONE_EXE=%REPOROOT%\dist\torchain.exe"
+
+set "BUILD_MODE=all"
+if /i "%~1"=="/onefile" set "BUILD_MODE=onefile"
+if /i "%~1"=="-onefile" set "BUILD_MODE=onefile"
+if /i "%~1"=="--onefile" set "BUILD_MODE=onefile"
+if /i "%~1"=="onefile" set "BUILD_MODE=onefile"
+if /i "%~1"=="/folder" set "BUILD_MODE=folder"
+if /i "%~1"=="-folder" set "BUILD_MODE=folder"
+if /i "%~1"=="--folder" set "BUILD_MODE=folder"
+if /i "%~1"=="folder" set "BUILD_MODE=folder"
 
 REM --- Check Python ---
 where python >nul 2>&1
@@ -40,7 +51,7 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo  torchain portable builder (folder distribution)
+echo  torchain Windows Builder (Mode: !BUILD_MODE!)
 echo  ================================================
 echo.
 
@@ -52,7 +63,7 @@ if not exist "%SCRIPTDIR%\Tor.zip" (
 )
 
 REM --- Install/upgrade PyInstaller ---
-echo [1/4] Installing PyInstaller...
+echo [1/4] Installing/verifying PyInstaller...
 %PY% -m pip install --upgrade pyinstaller >nul 2>&1
 if %errorlevel% neq 0 (
     echo [ERROR] Failed to install PyInstaller.
@@ -61,79 +72,95 @@ if %errorlevel% neq 0 (
 )
 echo        PyInstaller ready.
 
-REM --- Clean previous build ---
+REM --- Clean previous build artifacts ---
 echo [2/4] Cleaning previous build...
 if exist "%REPOROOT%\build" rmdir /s /q "%REPOROOT%\build" >nul 2>&1
-if exist "%OUTDIR%" rmdir /s /q "%OUTDIR%" >nul 2>&1
-if exist "%REPOROOT%\dist\torchain-portable.zip" del "%REPOROOT%\dist\torchain-portable.zip" >nul 2>&1
+if "!BUILD_MODE!"=="folder" (
+    if exist "%OUTDIR%" rmdir /s /q "%OUTDIR%" >nul 2>&1
+    if exist "%REPOROOT%\dist\torchain-portable.zip" del "%REPOROOT%\dist\torchain-portable.zip" >nul 2>&1
+) else if "!BUILD_MODE!"=="onefile" (
+    if exist "%STANDALONE_EXE%" del "%STANDALONE_EXE%" >nul 2>&1
+) else (
+    if exist "%OUTDIR%" rmdir /s /q "%OUTDIR%" >nul 2>&1
+    if exist "%STANDALONE_EXE%" del "%STANDALONE_EXE%" >nul 2>&1
+    if exist "%REPOROOT%\dist\torchain-portable.zip" del "%REPOROOT%\dist\torchain-portable.zip" >nul 2>&1
+)
 
-REM --- Build ---
-echo [3/4] Building portable folder (this may take a minute)...
-echo.
-%PY% -m PyInstaller --noconfirm "%SPECFILE%"
+REM --- Build Standalone Onefile ---
+if "!BUILD_MODE!"=="onefile" goto build_onefile
+if "!BUILD_MODE!"=="all" goto build_onefile
+goto check_folder
+
+:build_onefile
+echo [3/4] Building standalone single-file executable (torchain.exe)...
+%PY% -m PyInstaller --noconfirm "%ONEFILE_SPEC%"
 if %errorlevel% neq 0 (
     echo.
-    echo [ERROR] PyInstaller build failed. Check the output above.
+    echo [ERROR] Standalone PyInstaller build failed.
+    exit /b 1
+)
+if not exist "%STANDALONE_EXE%" (
+    echo [ERROR] Standalone torchain.exe not found in dist\
+    exit /b 1
+)
+echo        Standalone executable created: dist\torchain.exe
+if "!BUILD_MODE!"=="onefile" goto finish
+
+:check_folder
+if "!BUILD_MODE!"=="folder" goto build_folder
+if "!BUILD_MODE!"=="all" goto build_folder
+goto finish
+
+:build_folder
+echo [4/4] Building portable folder distribution...
+%PY% -m PyInstaller --noconfirm "%FOLDER_SPEC%"
+if %errorlevel% neq 0 (
+    echo.
+    echo [ERROR] Portable folder PyInstaller build failed.
     exit /b 1
 )
 
-REM --- Verify folder ---
 if not exist "%OUTDIR%\torchain.exe" (
     echo.
     echo [ERROR] torchain.exe not found in dist\torchain\ after build.
     exit /b 1
 )
 
-REM --- Check tkinter works by looking for Tcl/Tk data ---
 set "TCL_OK=0"
 if exist "%OUTDIR%\tcl8.6" set "TCL_OK=1"
 if exist "%OUTDIR%\_tcl_data" set "TCL_OK=1"
 if "%TCL_OK%"=="0" (
-    echo.
-    echo [WARNING] Tcl/Tk data directories not found in output.
-    echo           The CLI will work but the GUI may fail.
-    echo           Make sure Python was installed with Tcl/Tk support.
+    echo [WARNING] Tcl/Tk data directories not found in folder output.
 )
 
-REM --- Zip for easy transport ---
-echo [4/4] Creating portable zip...
 pushd "%REPOROOT%\dist"
 powershell -NoProfile -Command "Compress-Archive -Path 'torchain' -DestinationPath 'torchain-portable.zip' -Force"
 popd
+echo        Portable archive created: dist\torchain-portable.zip
 
-REM --- Done ---
+:finish
 echo.
 echo  ================================================
 echo  Build successful!
 echo.
-echo  Folder: dist\torchain\
-echo  Zip:    dist\torchain-portable.zip
-echo.
-for %%A in ("%OUTDIR%\torchain.exe") do (
-    set "SIZE=%%~zA"
-    set /a "MB=!SIZE! / 1048576"
-    echo  torchain.exe: ~!MB! MB
+if exist "%STANDALONE_EXE%" (
+    for %%A in ("%STANDALONE_EXE%") do (
+        set "SIZE=%%~zA"
+        set /a "MB=!SIZE! / 1048576"
+        echo  Standalone Exe: dist\torchain.exe (~!MB! MB)
+    )
 )
-echo.
+if exist "%OUTDIR%\torchain.exe" (
+    echo  Folder:         dist\torchain\
+)
 if exist "%REPOROOT%\dist\torchain-portable.zip" (
     for %%A in ("%REPOROOT%\dist\torchain-portable.zip") do (
         set "ZSIZE=%%~zA"
         set /a "ZMB=!ZSIZE! / 1048576"
-        echo  Zip size: ~!ZMB! MB
+        echo  Portable Zip:   dist\torchain-portable.zip (~!ZMB! MB)
     )
 )
 echo.
-echo  To use:
-echo    1. Extract torchain-portable.zip on any Windows 10/11 machine
-echo    2. Right-click torchain.exe -^> Run as administrator
-echo    3. First run extracts tor.exe to %%ProgramData%%\torchain\
-echo    4. Use: torchain.exe gui          (dashboard with tkinter GUI)
-echo           torchain.exe start         (CLI)
-echo           torchain.exe doctor        (check dependencies)
-echo.
-echo  No Python, no VC++ Redistributable, no installer needed.
-echo  Everything is inside the folder.
 echo  ================================================
-
 pause
 exit /b 0

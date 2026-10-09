@@ -99,10 +99,22 @@ def _verify_hosts_file(orig_host: str | None = None, spoofed_host: str | None = 
         lines = content.splitlines()
 
         # If spoofed hostname was set and differs from original, remove it
-        if spoofed_host and spoofed_host not in ("localhost", "127.0.0.1", orig_host):
-            lines = [ln for ln in lines
-                     if ln.strip() != f"127.0.0.1\t{spoofed_host}"
-                     and ln.strip() != f"127.0.0.1 {spoofed_host}"]
+        if spoofed_host and spoofed_host not in ("localhost", "127.0.0.1", "::1", orig_host):
+            cleaned = []
+            for ln in lines:
+                stripped = ln.strip()
+                if not stripped or stripped.startswith("#"):
+                    cleaned.append(ln)
+                    continue
+                tokens = stripped.split()
+                if len(tokens) >= 2 and tokens[0] in ("127.0.0.1", "127.0.1.1"):
+                    remaining = [t for t in tokens[1:] if t != spoofed_host]
+                    if not remaining:
+                        continue
+                    cleaned.append(f"{tokens[0]}\t{' '.join(remaining)}")
+                else:
+                    cleaned.append(ln)
+            lines = cleaned
 
         # Ensure localhost exists
         has_localhost = any("localhost" in ln.split() for ln in lines if not ln.strip().startswith("#"))

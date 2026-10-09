@@ -84,9 +84,25 @@ else
 fi
 
 # --- 3. restore spoofed hostname + bring interfaces up ---------------------
+orig_host=""
+spoofed_host=""
 if [ -f "$DATA_DIR/spoof_state.json" ] && have python3; then
   orig_host=$(python3 -c "import json,sys;print(json.load(open('$DATA_DIR/spoof_state.json')).get('hostname',''))" 2>/dev/null || true)
+  spoofed_host=$(python3 -c "import json,sys;print(json.load(open('$DATA_DIR/spoof_state.json')).get('spoofed_hostname',''))" 2>/dev/null || true)
   if [ -n "${orig_host:-}" ]; then hostname "$orig_host" 2>/dev/null && ok "hostname restored to $orig_host" || true; fi
+fi
+# Verify and repair /etc/hosts
+curr_host=$(hostname 2>/dev/null || true)
+[ -z "$curr_host" ] && [ -n "${orig_host:-}" ] && curr_host="$orig_host"
+if [ -f /etc/hosts ]; then
+  if [ -n "${curr_host:-}" ] && [ "$curr_host" != "localhost" ]; then
+    if ! grep -Eq "^127\.[0-9.]+[[:space:]]+.*\<${curr_host}\>" /etc/hosts; then
+      printf "127.0.1.1\t%s\n" "$curr_host" >> /etc/hosts 2>/dev/null && ok "added $curr_host to /etc/hosts" || true
+    fi
+  fi
+  if [ -n "${spoofed_host:-}" ] && [ "$spoofed_host" != "$curr_host" ] && [ "$spoofed_host" != "localhost" ]; then
+    sed -i -E "/^127\.[0-9.]+[[:space:]]+/s/([[:space:]]+)${spoofed_host}([[:space:]]+|$)/\1/g; /^[[:space:]]*127\.[0-9.]+[[:space:]]*$/d" /etc/hosts 2>/dev/null || true
+  fi
 fi
 if have ip; then
   for dev in /sys/class/net/*; do

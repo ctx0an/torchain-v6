@@ -48,17 +48,33 @@ Step "restore default outbound firewall policy" {
 }
 
 # 2. Delete every torchain firewall rule.
-foreach ($r in @("torchain-allow-tor","torchain-allow-loopback","torchain-block-ipv6")) {
+$rules = @("torchain-allow-tor","torchain-allow-loopback","torchain-block-ipv6",
+           "torchain-allow-pt-lyrebird","torchain-allow-pt-conjure-client",
+           "torchain-allow-pt-snowflake-client","torchain-allow-pt-snowflake",
+           "torchain-allow-pt-webtunnel-client","torchain-allow-pt-webtunnel",
+           "torchain-allow-pt-obfs4proxy")
+foreach ($r in $rules) {
     netsh advfirewall firewall delete rule name=$r 2>$null | Out-Null
 }
 Write-Host "  [ok] removed torchain firewall rules" -ForegroundColor Green
 
-# 3. Clear the per-user WinINET proxy (registry).
-Step "clear system (WinINET) proxy" {
-    $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
-    Set-ItemProperty -Path $key -Name ProxyEnable -Value 0 -Type DWord -ErrorAction SilentlyContinue
-    Remove-ItemProperty -Path $key -Name ProxyServer  -ErrorAction SilentlyContinue
-    Remove-ItemProperty -Path $key -Name AutoConfigURL -ErrorAction SilentlyContinue
+# 3. Clear system (WinINET) proxy across all user profiles (registry).
+Step "clear system (WinINET) proxy across all users" {
+    $hkcuKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+    Set-ItemProperty -Path $hkcuKey -Name ProxyEnable -Value 0 -Type DWord -ErrorAction SilentlyContinue
+    Remove-ItemProperty -Path $hkcuKey -Name ProxyServer  -ErrorAction SilentlyContinue
+    Remove-ItemProperty -Path $hkcuKey -Name AutoConfigURL -ErrorAction SilentlyContinue
+
+    Get-ChildItem -Path "Registry::HKEY_USERS" -ErrorAction SilentlyContinue | ForEach-Object {
+        if ($_.PSChildName -notmatch "_Classes$") {
+            $userKey = "Registry::HKEY_USERS\$($_.PSChildName)\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+            if (Test-Path $userKey) {
+                Set-ItemProperty -Path $userKey -Name ProxyEnable -Value 0 -Type DWord -ErrorAction SilentlyContinue
+                Remove-ItemProperty -Path $userKey -Name ProxyServer  -ErrorAction SilentlyContinue
+                Remove-ItemProperty -Path $userKey -Name AutoConfigURL -ErrorAction SilentlyContinue
+            }
+        }
+    }
 }
 
 # 4. Flush DNS + renew DHCP.

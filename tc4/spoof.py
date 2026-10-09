@@ -144,13 +144,26 @@ def _ensure_hosts_entry(name: str) -> None:
 
 
 def _remove_hosts_entry(name: str) -> None:
+    if not name or name in ("localhost", "127.0.0.1", "::1"):
+        return
     try:
         with open("/etc/hosts", "r", encoding="utf-8") as fh:
             lines = fh.readlines()
-        filtered = [ln for ln in lines
-                    if ln.strip() != f"127.0.0.1\t{name}"
-                    and ln.strip() != f"127.0.0.1 {name}"]
-        if len(filtered) != len(lines):
+        filtered = []
+        for ln in lines:
+            stripped = ln.strip()
+            if not stripped or stripped.startswith("#"):
+                filtered.append(ln)
+                continue
+            tokens = stripped.split()
+            if len(tokens) >= 2 and tokens[0] in ("127.0.0.1", "127.0.1.1"):
+                remaining = [t for t in tokens[1:] if t != name]
+                if not remaining:
+                    continue
+                filtered.append(f"{tokens[0]}\t{' '.join(remaining)}\n")
+            else:
+                filtered.append(ln)
+        if len(filtered) != len(lines) or filtered != lines:
             with open("/etc/hosts", "w", encoding="utf-8") as fh:
                 fh.writelines(filtered)
     except OSError:

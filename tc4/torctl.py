@@ -132,7 +132,7 @@ class ControlClient:
         out: list[str] = []
         in_data = False
         for line in reply:
-            if line.startswith("250+") or line.startswith("250-"):
+            if line.startswith("250+") or line.startswith("250-") or (line.startswith("250 ") and "=" in line):
                 if "=" in line:
                     val = line.split("=", 1)[1]
                     if val:

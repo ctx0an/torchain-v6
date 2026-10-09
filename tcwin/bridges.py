@@ -202,10 +202,10 @@ def _extract_addr(line: str) -> tuple[str, int] | None:
 
 
 def _test_single_bridge(line: str, timeout: float = 5.0) -> tuple[str, bool, str]:
-    line_strip = line.strip()
+    line_clean = re.sub(r"^(?:bridge\s+)", "", line.strip(), flags=re.I)
     # Pluggable transports using dummy/placeholder addresses cannot be TCP-pinged directly.
     for pt in ("snowflake", "meek_lite", "webtunnel"):
-        if line_strip.startswith(pt):
+        if line_clean.lower().startswith(pt):
             return line, True, "assumed reachable (pluggable transport)"
 
     addr = _extract_addr(line)
