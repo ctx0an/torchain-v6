@@ -108,7 +108,8 @@ def up(cfg: Config, tor_exe: str) -> None:
             check=True, timeout=20)
         # Allow pluggable transports (lyrebird, conjure-client, snowflake, etc.)
         for pt_exe in _find_pt_executables(tor_exe):
-            base = os.path.splitext(os.path.basename(pt_exe))[0].lower()
+            filename = pt_exe.replace("\\", "/").rsplit("/", 1)[-1]
+            base = os.path.splitext(filename)[0].lower()
             run(["netsh", "advfirewall", "firewall", "add", "rule",
                  f"name={FW_RULE_PREFIX}-allow-pt-{base}", "dir=out", "action=allow",
                  f'program="{pt_exe}"', "enable=yes", "profile=any"],

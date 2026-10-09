@@ -10,6 +10,7 @@ Performance principles (this is why it sips RAM/CPU):
 """
 from __future__ import annotations
 
+import math
 import os
 import queue
 import threading
@@ -37,6 +38,13 @@ class TorChainGUI:
         self._busy = False
         self._active_view = "dashboard"
         self._log_pos = 0
+
+        # Collapsible animated sidebar state
+        self._sidebar_collapsed = False
+        self._sidebar_animating = False
+        self._sidebar_w = 230
+        self._sidebar_expanded_w = 230
+        self._sidebar_collapsed_w = 64
 
         # Title is intentionally just the app name, nothing else.
         self.root.title("torchain")
@@ -99,8 +107,19 @@ class TorChainGUI:
         top = tk.Frame(self.root, bg=P.overlay, height=52)
         top.pack(side="top", fill="x")
         top.pack_propagate(False)
+
+        # Animated sidebar collapse/expand toggle button
+        self.sidebar_toggle_btn = tk.Label(
+            top, text="☰", bg=P.overlay, fg=P.cyan,
+            font=font(14, bold=True), width=3, cursor="hand2"
+        )
+        self.sidebar_toggle_btn.pack(side="left", padx=(SPACE["sm"], 0))
+        self.sidebar_toggle_btn.bind("<Button-1>", lambda e: self._toggle_sidebar())
+        self.sidebar_toggle_btn.bind("<Enter>", lambda e: self.sidebar_toggle_btn.configure(fg="#FFFFFF"))
+        self.sidebar_toggle_btn.bind("<Leave>", lambda e: self.sidebar_toggle_btn.configure(fg=P.cyan))
+
         tk.Label(top, text="torchain", bg=P.overlay, fg=P.text,
-                 font=font(16, bold=True)).pack(side="left", padx=SPACE["lg"])
+                 font=font(16, bold=True)).pack(side="left", padx=(SPACE["xs"], SPACE["lg"]))
         self.status_pill = tk.Label(top, text="●  CHECKING", bg=P.overlay,
                                     fg=P.idle, font=font(11, bold=True))
         self.status_pill.pack(side="right", padx=SPACE["lg"])
@@ -109,8 +128,7 @@ class TorChainGUI:
         body = tk.Frame(self.root, bg=P.bg)
         body.pack(side="top", fill="both", expand=True)
 
-        # 225px width gives comfortable breathing room so all labels and footers fit cleanly without truncation
-        self.sidebar = tk.Frame(body, bg=P.overlay, width=225, highlightbackground=P.border, highlightthickness=1)
+        self.sidebar = tk.Frame(body, bg=P.overlay, width=self._sidebar_w, highlightbackground=P.border, highlightthickness=1)
         self.sidebar.pack(side="left", fill="y")
         self.sidebar.pack_propagate(False)
 
@@ -167,14 +185,14 @@ class TorChainGUI:
             }
 
         # Sidebar footer: star button + credit + version (clean, unclipped, styled).
-        footer = tk.Frame(self.sidebar, bg=P.overlay)
-        footer.pack(side="bottom", fill="x", padx=SPACE["md"], pady=SPACE["md"])
+        self.sidebar_footer = tk.Frame(self.sidebar, bg=P.overlay)
+        self.sidebar_footer.pack(side="bottom", fill="x", padx=SPACE["md"], pady=SPACE["md"])
 
         # Subtle separator line above footer
-        sep = tk.Frame(footer, bg=P.border, height=1)
+        sep = tk.Frame(self.sidebar_footer, bg=P.border, height=1)
         sep.pack(fill="x", pady=(0, SPACE["sm"]))
 
-        star_row = tk.Frame(footer, bg=P.surface, cursor="hand2", highlightbackground=P.border, highlightthickness=1)
+        star_row = tk.Frame(self.sidebar_footer, bg=P.surface, cursor="hand2", highlightbackground=P.border, highlightthickness=1)
         star_row.pack(fill="x", pady=(0, SPACE["sm"]))
         star = tk.Label(
             star_row, text="★  Star on GitHub", bg=P.surface,
@@ -186,9 +204,9 @@ class TorChainGUI:
             w.bind("<Enter>", lambda e: [star_row.configure(highlightbackground=P.accent), star.configure(fg=P.accent_hi)])
             w.bind("<Leave>", lambda e: [star_row.configure(highlightbackground=P.border), star.configure(fg=P.warn)])
 
-        tk.Label(footer, text=CREDIT, bg=P.overlay, fg=P.text_dim,
+        tk.Label(self.sidebar_footer, text=CREDIT, bg=P.overlay, fg=P.text_dim,
                  font=font(8), anchor="w").pack(fill="x", pady=(2, 0))
-        tk.Label(footer, text=f"v{__version__}  •  Kali Edition", bg=P.overlay, fg=P.cyan,
+        tk.Label(self.sidebar_footer, text=f"v{__version__}  •  Kali Edition", bg=P.overlay, fg=P.cyan,
                  font=font(8, bold=True), anchor="w").pack(fill="x", pady=(2, 0))
 
         # Build all views once; show/hide on demand (cheap, avoids rebuilds).
@@ -611,6 +629,51 @@ class TorChainGUI:
                             fg=P.text, selectcolor=P.overlay, activebackground=P.surface,
                             activeforeground=P.text, font=font(10), anchor="w")
         cb.pack(fill="x", pady=SPACE["xs"])
+
+    # ------------------------------------------------------------------
+    # Collapsible sidebar animation (elastic sliding rail)
+    # ------------------------------------------------------------------
+    def _toggle_sidebar(self):
+        if self._sidebar_animating:
+            return
+        self._sidebar_collapsed = not self._sidebar_collapsed
+        target_w = self._sidebar_collapsed_w if self._sidebar_collapsed else self._sidebar_expanded_w
+        self.sidebar_toggle_btn.configure(text="»" if self._sidebar_collapsed else "☰")
+        self._animate_sidebar(target_w)
+
+    def _animate_sidebar(self, target_w: int, step: int = 0, total_steps: int = 10):
+        self._sidebar_animating = True
+        start_w = self._sidebar_w
+        delta = target_w - start_w
+
+        def _tick(s=0):
+            if s <= total_steps:
+                # Smooth cubic deceleration curve
+                progress = s / total_steps
+                ease = 1.0 - math.pow(1.0 - progress, 3.0)
+                curr_w = int(start_w + delta * ease)
+                self._sidebar_w = curr_w
+                self.sidebar.configure(width=curr_w)
+
+                # Dynamically hide/fade labels when rail is compact
+                if curr_w <= 100:
+                    for item in self._nav_items.values():
+                        item["text"].pack_forget()
+                    self.sidebar_footer.pack_forget()
+                else:
+                    for item in self._nav_items.values():
+                        if not item["text"].winfo_ismapped():
+                            item["text"].pack(side="left", fill="x", expand=True, padx=(2, SPACE["md"]), pady=7)
+                    if not self.sidebar_footer.winfo_ismapped():
+                        self.sidebar_footer.pack(side="bottom", fill="x", padx=SPACE["md"], pady=SPACE["md"])
+
+                self.root.after(16, lambda: _tick(s + 1))
+            else:
+                self._sidebar_w = target_w
+                self.sidebar.configure(width=target_w)
+                self._sidebar_animating = False
+
+        _tick(0)
 
     # ------------------------------------------------------------------
     # View switching

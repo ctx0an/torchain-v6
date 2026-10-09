@@ -10,6 +10,7 @@ fresh bridges from Tor's BridgeDB.
 """
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import re
 import socket
@@ -231,35 +232,36 @@ def _extract_addr(line: str) -> tuple[str, int] | None:
     return None
 
 
+def _test_single_bridge(line: str, timeout: float = 5.0) -> tuple[str, bool, str]:
+    line_strip = line.strip()
+    # Pluggable transports using dummy/placeholder addresses cannot be TCP-pinged directly.
+    for pt in ("snowflake", "meek_lite", "webtunnel"):
+        if line_strip.startswith(pt):
+            return line, True, "assumed reachable (pluggable transport)"
+
+    addr = _extract_addr(line)
+    if not addr:
+        return line, False, "no IP:port found"
+    host, port = addr
+    try:
+        sock = socket.create_connection((host, port), timeout=timeout)
+        sock.close()
+        return line, True, f"{host}:{port} reachable"
+    except OSError as exc:
+        return line, False, f"{host}:{port} — {exc}"
+
+
 def test_bridges(bridge_lines: list[str] | None = None,
                  cfg: Config | None = None, *,
                  timeout: float = 5.0) -> list[tuple[str, bool, str]]:
-    """TCP-ping each bridge and return ``(line, alive, info)`` tuples."""
+    """TCP-ping each bridge in parallel and return ``(line, alive, info)`` tuples."""
     if bridge_lines is None:
         cfg = cfg or config_mod.load()
         bridge_lines = cfg.custom_bridges
-    results: list[tuple[str, bool, str]] = []
-    for line in bridge_lines:
-        line_strip = line.strip()
-        # Pluggable transports using dummy/placeholder addresses cannot be TCP-pinged directly.
-        is_placeholder = False
-        for pt in ("snowflake", "meek_lite", "webtunnel"):
-            if line_strip.startswith(pt):
-                is_placeholder = True
-                break
-        if is_placeholder:
-            results.append((line, True, "assumed reachable (pluggable transport)"))
-            continue
+    if not bridge_lines:
+        return []
+    max_workers = min(10, len(bridge_lines))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(_test_single_bridge, line, timeout) for line in bridge_lines]
+        return [f.result() for f in futures]
 
-        addr = _extract_addr(line)
-        if not addr:
-            results.append((line, False, "no IP:port found"))
-            continue
-        host, port = addr
-        try:
-            sock = socket.create_connection((host, port), timeout=timeout)
-            sock.close()
-            results.append((line, True, f"{host}:{port} reachable"))
-        except OSError as exc:
-            results.append((line, False, f"{host}:{port} — {exc}"))
-    return results

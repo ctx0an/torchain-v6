@@ -26,16 +26,23 @@ def _marker() -> str:
 
 
 def _bundled_zip() -> str | None:
-    """Return the path to the bundled Tor.zip inside the PyInstaller temp dir."""
+    """Return the path to the bundled Tor.zip inside the PyInstaller temp dir or app folder."""
     if not getattr(sys, 'frozen', False):
         return None
-    # PyInstaller extracts data files to sys._MEIPASS
+    candidates: list[str] = []
     base = getattr(sys, '_MEIPASS', None)
-    if not base:
-        return None
-    candidate = os.path.join(base, 'tor_bundle', 'Tor.zip')
-    if os.path.exists(candidate):
-        return candidate
+    if base:
+        candidates.append(os.path.join(base, 'tor_bundle', 'Tor.zip'))
+        candidates.append(os.path.join(base, 'Tor.zip'))
+    try:
+        exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+        candidates.append(os.path.join(exe_dir, 'tor_bundle', 'Tor.zip'))
+        candidates.append(os.path.join(exe_dir, 'Tor.zip'))
+    except Exception:
+        pass
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
     return None
 
 

@@ -7,6 +7,8 @@ circuit status. Sockets are always closed via context management.
 from __future__ import annotations
 
 import binascii
+import functools
+import os
 import re
 import socket
 import time
@@ -17,10 +19,11 @@ from .log import get_logger
 
 log = get_logger()
 
-import os
-
 _COOKIE = os.path.join(DATA_DIR, "tor", "control_auth_cookie")
 _FP_RE = re.compile(r"\$([0-9A-Fa-f]{40})(?:=([^,\s]+))?")
+
+_RELAY_IP_CACHE: dict[str, str | None] = {}
+_IP_COUNTRY_CACHE: dict[str, str] = {}
 
 
 class ControlClient:
@@ -147,9 +150,12 @@ class ControlClient:
         raw = self.get_info("circuit-status")
         return [ln for ln in raw.splitlines() if ln.strip()]
 
+    @functools.lru_cache(maxsize=1024)
     def relay_ip(self, fingerprint: str) -> str | None:
         """Look up the IP address of a relay or bridge by its hex fingerprint."""
         fp = fingerprint.upper()
+        if fp in _RELAY_IP_CACHE:
+            return _RELAY_IP_CACHE[fp]
         # Try consensus (public relays)
         try:
             raw = self.get_info(f"ns/id/{fp}")
@@ -162,29 +168,42 @@ class ControlClient:
                 if line.startswith("r "):
                     parts = line.split()
                     if len(parts) >= 8:
-                        return parts[5]
+                        ip = parts[5]
+                        _RELAY_IP_CACHE[fp] = ip
+                        return ip
         # Fallback: full descriptor (bridges, etc.)
         try:
             raw = self.get_info(f"desc/id/{fp}")
         except TorError:
+            _RELAY_IP_CACHE[fp] = None
             return None
         for line in raw.splitlines():
             if line.startswith("router "):
                 parts = line.split()
                 if len(parts) >= 6:
-                    return parts[2]
+                    ip = parts[2]
+                    _RELAY_IP_CACHE[fp] = ip
+                    return ip
             if line.startswith("or-address "):
                 parts = line.split()
                 if len(parts) >= 2:
-                    return parts[1].rsplit(":", 1)[0]
+                    ip = parts[1].rsplit(":", 1)[0]
+                    _RELAY_IP_CACHE[fp] = ip
+                    return ip
+        _RELAY_IP_CACHE[fp] = None
         return None
 
+    @functools.lru_cache(maxsize=1024)
     def ip_country(self, ip: str) -> str:
         """Get 2-letter country code for an IP via tor's GeoIP."""
+        if ip in _IP_COUNTRY_CACHE:
+            return _IP_COUNTRY_CACHE[ip]
         try:
-            return self.get_info(f"ip-to-country/{ip}").strip()
+            res = self.get_info(f"ip-to-country/{ip}").strip()
         except TorError:
-            return "??"
+            res = "??"
+        _IP_COUNTRY_CACHE[ip] = res
+        return res
 
     def circuit_details(self) -> list[dict]:
         """Return structured info for each circuit with relay IPs and countries."""
