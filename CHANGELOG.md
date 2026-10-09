@@ -7,10 +7,28 @@ All notable changes to this project are documented here. The format follows
 ## [6.0.0] - 2026-10-09
 
 ### Added
+- **Standalone Windows Executable (`torchain.exe`).** Zero-dependency single-file executable built with PyInstaller onefile packaging, bundling embedded native Python runtime, Tkinter GUI, and self-extracting Tor bundle.
 - **Pro Gyroscopic Boot HUD Animation Suite.** Tactical gyroscopic boot sequence featuring triple differential rotating dials, azimuth tick scales, scanning radar beam, and system telemetry with 0% idle CPU footprint.
 - **Cyber-Reactive Haptic Buttons (`ProCyberButton`).** 45° chamfered military-style buttons with coordinate-tracked dynamic ripple shockwaves, cryptographic text scrambler decoder on hover, and physical button spring depression.
 - **Interactive Multi-Hop Tor Circuit Visualizer.** Live packet flow animation illustrating 3-hop onion circuit paths with encrypted packet sparks and latency badges.
 - **Elastic State Pulse Engine.** One-shot transient spring pulses for status indicators with zero steady-state CPU utilization.
+- **Automated Verification Test Suite.** Added comprehensive unit tests in `tests/test_verification.py` covering firewall rules, circuit performance directives, ControlPort caching, and host repair.
+
+### Changed
+- **Network Performance Optimizations:**
+  - Enabled `OptimisticData 1` across Linux, Windows, Android, and Termux to eliminate 1 full RTT on stream connections.
+  - Dynamic circuit timeout tuning (`LearnCircuitBuildTimeout 1`) and single guard profile (`NumEntryGuards 1`).
+  - Concurrent bridge connectivity checks powered by `concurrent.futures.ThreadPoolExecutor(max_workers=10)`.
+  - In-memory memoization (`@functools.lru_cache`) for ControlPort GeoIP and relay consensus queries.
+
+### Fixed
+- **Linux Transparent Proxy `.onion` Routing:** Fixed `10.192.0.0/10` virtual address redirection in `tc4/firewall.py` before the RFC1918 bypass loop.
+- **Windows Defender Firewall Pluggable Transports:** Added automatic allowlisting for transport binaries (`lyrebird.exe`, `conjure-client.exe`, etc.) before engaging outbound blocking.
+- **Clean Hostname Restoration:** Resolved `/etc/hosts` corruption during identity restore in `tc4/spoof.py`, preserving original machine hostnames.
+- **Multi-User Registry Recovery:** Extended `internet.bat` and `internet.ps1` to clear proxy settings across all user hives in `HKEY_USERS` when run elevated.
+- **Termux Anti-Censorship:** Removed hardcoded static bridge IPs in `torchain-termux` in favor of dynamic `$CONF_DIR/bridges.txt` loading.
+- **Android LeakTester False Positive:** Accounted for Torchain's necessary VPN exclusion (`addDisallowedApplication`) to prevent false leak alarms.
+- **Android Build & Gradlew Shebang:** Normalized `gradlew` line endings to LF and updated GitHub Actions SDK installation.
 
 ## [5.0.1] - 2026-06-23
 

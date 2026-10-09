@@ -67,7 +67,7 @@ sudo ./Torchain-x86_64.AppImage --appimage-extract-and-run
 
 ### Android
 
-Grab the APK from [Releases](https://github.com/ctx0an/torchain-v6/releases/latest), allow "install from unknown sources" for your browser when it asks, and open it. Needs Android 8.0+.
+Grab [`app-debug.apk`](https://github.com/ctx0an/torchain-v6/releases/latest/download/app-debug.apk) (~77 MB) from [Releases](https://github.com/ctx0an/torchain-v6/releases/latest), allow "install from unknown sources" for your browser when it asks, and open it. Needs Android 8.0+. Ships with multi-ABI support (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`) and embedded Tor native libraries.
 
 The app runs Tor through `TorVpnService` and draws the same dashboard in Jetpack Compose.
 
