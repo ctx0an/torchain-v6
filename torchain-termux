@@ -399,7 +399,7 @@ EOF
     # Wait for Privoxy port to open
     info "Waiting for Gateway (Privoxy) to come up..."
     local privoxy_ok=0
-    for i in {1..10}; do
+    for _ in {1..10}; do
       if is_port_open "127.0.0.1" 8118; then
         privoxy_ok=1
         break

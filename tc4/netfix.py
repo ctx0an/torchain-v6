@@ -22,7 +22,7 @@ import os
 
 from . import DATA_DIR
 from .log import get_logger
-from .sysutil import run_ok, which
+from .sysutil import run, run_ok, which
 
 log = get_logger()
 
