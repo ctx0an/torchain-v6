@@ -43,7 +43,7 @@ Pre-built, standalone binaries with embedded Tor engines and GUI dashboards:
 | :--- | :--- | :--- | :--- | :--- |
 | **Windows** | [📥 **torchain.exe**](https://github.com/ctx0an/torchain-v6/releases/latest/download/torchain.exe) | Single-File Executable | ~33 MB | Windows 10 / 11 (64-bit) |
 | **Windows** | [📥 **torchain-portable.zip**](https://github.com/ctx0an/torchain-v6/releases/latest/download/torchain-portable.zip) | Portable Directory Archive | ~33 MB | No install / Instant extraction |
-| **Linux** | [📥 **Torchain-x86_64.AppImage**](https://github.com/ctx0an/torchain-v6/releases/latest/download/Torchain-x86_64.AppImage) | Portable Linux AppImage | ~18 MB | Kernel 4.x+ (Debian, Ubuntu, Arch, Fedora, Kali) |
+| **Linux** | [📥 **Torchain-x86_64.AppImage**](https://github.com/ctx0an/torchain-v6/releases/latest/download/Torchain-x86_64.AppImage) | Portable Binary (CLI + GUI) | ~18 MB | Kernel 4.x+ (Debian, Ubuntu, Arch, Fedora, Kali) |
 | **Android** | [📥 **app-debug.apk**](https://github.com/ctx0an/torchain-v6/releases/latest/download/app-debug.apk) | Standalone APK | ~80 MB | Android 8.0+ (ARM64, ARMv7, x86, x64) |
 | **Termux** | [`torchain-termux`](#termux) | Standalone Shell Script | ~15 KB | Termux on Android (No Root Required) |
 
@@ -115,13 +115,54 @@ Torchain v6 was comprehensively audited against **25 attack vectors and leak sce
 
 ### Linux (Debian, Ubuntu, Arch, Fedora, Kali)
 
-1. Download and run the standalone AppImage:
-```bash
-wget https://github.com/ctx0an/torchain-v6/releases/latest/download/Torchain-x86_64.AppImage
-chmod +x Torchain-x86_64.AppImage
+Torchain on Linux provides both a full-featured **command-line interface (CLI)** and an optional **cyber GUI dashboard**.
 
-sudo ./Torchain-x86_64.AppImage gui     # Launch GUI Dashboard
-sudo ./Torchain-x86_64.AppImage start   # Enable transparent proxy
+#### Method 1: Portable AppImage (Instant CLI & GUI Install)
+
+The AppImage is a self-contained executable with embedded Python and Tor dependencies. Install it directly onto your `PATH` so `torchain` is available as a system command from any terminal:
+
+```bash
+# 1. Download and install directly to /usr/local/bin
+sudo wget -O /usr/local/bin/torchain https://github.com/ctx0an/torchain-v6/releases/latest/download/Torchain-x86_64.AppImage
+
+# 2. Make it executable
+sudo chmod +x /usr/local/bin/torchain
+
+# 3. Run any CLI command from anywhere
+torchain doctor        # Pre-flight check (firewall, dependencies, leaks)
+sudo torchain start    # Route 100% of network traffic through Tor
+torchain status        # Show current circuit & exit IP
+torchain leaktest      # Run the 7-point automated leak test suite
+sudo torchain rotate   # Trigger NEWNYM: change circuits and exit IP
+sudo torchain stop     # Safely disarm firewall & restore cleartext
+sudo torchain gui      # Launch the interactive cyber GUI dashboard
+```
+
+> **Tip (Headless servers / Minimal distros):** If your Linux system lacks FUSE (`libfuse2`), append `--appimage-extract-and-run`:
+> ```bash
+> sudo torchain --appimage-extract-and-run start
+> ```
+
+#### Method 2: Native System Install (From Source)
+
+For full OS integration with package manager dependencies (`apt`/`dnf`/`pacman`), systemd units, and application menu entry:
+
+```bash
+git clone https://github.com/ctx0an/torchain-v6.git
+cd torchain-v6
+sudo ./setup.sh
+```
+
+This installs system packages (`tor`, `obfs4proxy`, `iptables`, `python3-tk`, `polkit`), links `torchain` into `/usr/local/bin`, and registers the desktop icon in your application launcher.
+
+#### Uninstalling on Linux
+
+```bash
+# If installed via AppImage:
+sudo torchain stop && sudo rm /usr/local/bin/torchain
+
+# If installed via setup.sh:
+sudo torchain stop && sudo rm -rf /usr/share/torchain /usr/local/bin/torchain /usr/share/applications/torchain.desktop
 ```
 
 ### Android
