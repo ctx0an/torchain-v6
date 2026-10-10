@@ -39,6 +39,10 @@ command -v python3 >/dev/null 2>&1 || die "python3 is required but not installed
 
 PYBIN="$(command -v python3)"
 CMD="${1:-}"
+if [ -z "$CMD" ]; then
+  CMD="gui"
+  set -- "gui"
+fi
 
 # --- which commands need root? (almost everything that touches the system) --
 NEEDS_ROOT=0

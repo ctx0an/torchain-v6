@@ -23,4 +23,7 @@ else:
         from tc4.cli import main
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    args = sys.argv[1:]
+    if not args:
+        args = ["gui"]
+    sys.exit(main(args))

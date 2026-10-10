@@ -57,6 +57,26 @@ cat > "$APPDIR/usr/bin/torchain" << 'LAUNCHER'
 # Add bundled tor to PATH so it's found by the engine
 APP_DIR="$(dirname "$(readlink -f "$0")")/../share/torchain"
 export PATH="$APP_DIR:$PATH"
+
+# Default to GUI when launched without arguments (e.g. double-click)
+if [ $# -eq 0 ]; then
+    set -- "gui"
+fi
+
+CMD="${1:-}"
+
+# Auto-elevate via pkexec when launched as GUI in desktop session without root
+if [ "$CMD" = "gui" ] && [ "$(id -u)" -ne 0 ] && [ -n "${DISPLAY:-}" ]; then
+    if command -v pkexec >/dev/null 2>&1 && [ -z "${TORCHAIN_NO_ELEVATE:-}" ]; then
+        command -v xhost >/dev/null 2>&1 && xhost +SI:localuser:root >/dev/null 2>&1 || true
+        TARGET="${APPIMAGE:-$APP_DIR/torchain}"
+        export TORCHAIN_NO_ELEVATE=1
+        if pkexec env DISPLAY="$DISPLAY" XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}" TORCHAIN_NO_ELEVATE=1 "$TARGET" "$@"; then
+            exit 0
+        fi
+    fi
+fi
+
 exec "$APP_DIR/torchain" "$@"
 LAUNCHER
 chmod +x "$APPDIR/usr/bin/torchain"
