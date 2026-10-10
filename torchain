@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# torchain - fast, system-wide Tor anonymizer (v5)
+# torchain - fast, system-wide Tor anonymizer (v6)
 #
 # Thin, robust launcher. All real logic lives in the `tc4` Python package so
 # the tool starts fast and uses very little memory. The launcher's jobs are:

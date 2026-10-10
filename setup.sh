@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# torchain v5 installer. Idempotent and safe to re-run.
+# torchain v6 installer. Idempotent and safe to re-run.
 #
 # It auto-elevates (so `./setup.sh` works without typing sudo yourself),
 # installs dependencies, then hands off to the built-in migration manager,
-# which removes ANY older torchain install and puts v5 in its place.
+# which removes ANY older torchain install and puts v6 in its place.
 #
 set -Eeuo pipefail
 
@@ -60,7 +60,7 @@ ensure_tor_user() {
 migrate_and_install() {
   # The migration manager detects + removes older torchain installs (v3 'trc',
   # old layouts, stray binaries, services, configs) and installs v5 in place.
-  info "running migration manager (removing any older torchain + installing v5)"
+  info "running migration manager (removing any older torchain + installing v6)"
   PYTHONPATH="$SRC_DIR" python3 -m tc4 migrate || die "migration failed"
 
   mkdir -p /etc/torchain /var/lib/torchain/tor /var/log/torchain /run/torchain
@@ -127,7 +127,7 @@ migrate_and_install
 install_desktop_entry
 
 echo
-ok "torchain v5 installed."
+ok "torchain v6 installed."
 echo "  Run a check : torchain doctor"
 echo "  Connect    : torchain start        (auto-elevates)"
 echo "  Dashboard  : torchain gui           (auto-elevates with X forwarding)"
