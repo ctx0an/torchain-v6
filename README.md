@@ -7,6 +7,7 @@
 **System-Wide Transparent Tor Routing & Fail-Closed Kill-Switch for Windows, Linux & Android**
 
 [![Release](https://img.shields.io/github/v/release/ctx0an/torchain-v6?color=7952b3&logo=github&style=flat-square)](https://github.com/ctx0an/torchain-v6/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/ctx0an/torchain-v6/total?color=2ea44f&style=flat-square&logo=github)](https://github.com/ctx0an/torchain-v6/releases)
 [![Security Audit](https://img.shields.io/badge/Security_Audit-25_Vectors_Hardened-success?style=flat-square&logo=shield)](https://github.com/ctx0an/torchain-v6#security-audit--hardening)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20Android%20%7C%20Termux-blue?style=flat-square)](https://github.com/ctx0an/torchain-v6#downloads)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
@@ -226,10 +227,12 @@ torchain config --set watchdog_enabled=true   # Automatic daemon health monitori
 
 ---
 
-## 🌟 Star History
+## 📈 Download & Star History
 
-If Torchain helped protect your privacy, please give it a star! ⭐
+### Release Downloads Over Time
+![Release Download History](stats/downloads_chart.svg)
 
+### Star History
 [![Star History Chart](https://api.star-history.com/svg?repos=ctx0an/torchain-v6&type=Date)](https://star-history.com/#ctx0an/torchain-v6&Date)
 
 ---

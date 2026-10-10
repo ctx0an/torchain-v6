@@ -1,0 +1,40 @@
+name: Track Release Downloads
+
+on:
+  schedule:
+    # Run daily at 00:00 UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Update download statistics & SVG chart
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/track_downloads.py
+
+      - name: Commit and push updated stats
+        run: |
+          git config user.name "ctx0an"
+          git config user.email "ctx0an@users.noreply.github.com"
+          git add stats/
+          if git diff --staged --quiet; then
+            echo "No stats changes to commit."
+          else
+            git commit -m "chore(stats): update release download history and chart [skip ci]"
+            git push
+          fi
