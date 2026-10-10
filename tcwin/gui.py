@@ -1013,8 +1013,11 @@ class TorChainGUI:
             self.status_pill.configure(text="●  INACTIVE", fg=P.idle)
             self.connect_btn.configure(text="CONNECT", bg=P.accent)
 
-        self.boot_bar["value"] = st.bootstrap
-        self.tile_vals["boot"].configure(text=f"{st.bootstrap}%")
+        boot_val = st.bootstrap
+        if st.active and st.tor_running:
+            boot_val = max(st.bootstrap, 100)
+        self.boot_bar["value"] = boot_val
+        self.tile_vals["boot"].configure(text=f"{boot_val}%")
         self.tile_vals["pid"].configure(text=str(st.pid) if st.pid else "—")
         self.tile_vals["fw"].configure(
             text="ON" if st.firewall_up else "OFF",

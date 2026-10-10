@@ -26,7 +26,9 @@ from .sysutil import run, run_ok, which
 log = get_logger()
 
 _RULE_TOR = f"{FW_RULE_PREFIX}-allow-tor"
+_RULE_TOR_IN = f"{FW_RULE_PREFIX}-allow-tor-in"
 _RULE_LOOPBACK = f"{FW_RULE_PREFIX}-allow-loopback"
+_RULE_LOOPBACK_IN = f"{FW_RULE_PREFIX}-allow-loopback-in"
 _RULE_BLOCK6 = f"{FW_RULE_PREFIX}-block-ipv6"
 
 _KNOWN_PT_NAMES = (
@@ -90,7 +92,7 @@ def _set_policy(outbound: str) -> None:
 
 
 def _delete_rules() -> None:
-    rule_names = [_RULE_TOR, _RULE_LOOPBACK, _RULE_BLOCK6]
+    rule_names = [_RULE_TOR, _RULE_TOR_IN, _RULE_LOOPBACK, _RULE_LOOPBACK_IN, _RULE_BLOCK6]
     for pt in _KNOWN_PT_NAMES:
         rule_names.append(f"{FW_RULE_PREFIX}-allow-pt-{pt}")
     for name in rule_names:
@@ -114,6 +116,11 @@ def up(cfg: Config, tor_exe: str) -> None:
              f"name={_RULE_TOR}", "dir=out", "action=allow",
              f'program="{tor_exe}"', "enable=yes", "profile=any"],
             check=True, timeout=20)
+        # Allow tor.exe inbound on loopback so local proxy clients can hand traffic to tor
+        run(["netsh", "advfirewall", "firewall", "add", "rule",
+             f"name={_RULE_TOR_IN}", "dir=in", "action=allow",
+             f'program="{tor_exe}"', "localip=127.0.0.1", "enable=yes", "profile=any"],
+            check=False, timeout=20)
         # Allow pluggable transports (lyrebird, conjure-client, snowflake, etc.)
         for pt_exe in _find_pt_executables(tor_exe):
             filename = pt_exe.replace("\\", "/").rsplit("/", 1)[-1]
@@ -122,10 +129,15 @@ def up(cfg: Config, tor_exe: str) -> None:
                  f"name={FW_RULE_PREFIX}-allow-pt-{base}", "dir=out", "action=allow",
                  f'program="{pt_exe}"', "enable=yes", "profile=any"],
                 check=False, timeout=20)
-        # Allow loopback so SOCKS clients can reach tor on 127.0.0.1.
+        # Allow loopback outbound so SOCKS clients can reach tor on 127.0.0.1
         run(["netsh", "advfirewall", "firewall", "add", "rule",
              f"name={_RULE_LOOPBACK}", "dir=out", "action=allow",
              "remoteip=127.0.0.0/8", "enable=yes", "profile=any"],
+            check=True, timeout=20)
+        # Allow loopback inbound so local servers (tor listeners) can accept connections
+        run(["netsh", "advfirewall", "firewall", "add", "rule",
+             f"name={_RULE_LOOPBACK_IN}", "dir=in", "action=allow",
+             "localip=127.0.0.0/8", "enable=yes", "profile=any"],
             check=True, timeout=20)
         if cfg.block_ipv6:
             # Belt-and-suspenders: block IPv6 egress using valid Windows IP range syntax

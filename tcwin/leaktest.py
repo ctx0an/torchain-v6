@@ -71,51 +71,27 @@ def _socks5_connect(host: str, port: int, *, sport: int, timeout: float = 10.0) 
 
 
 def _http_json_via_tor(host: str, path: str, *, sport: int, timeout: float = 12.0) -> dict:
-    buf = b""
-    # Primary: HTTPS via port 443 with resilient SSL context
+    raw = _socks5_connect(host, 443, sport=sport, timeout=timeout)
+    # Directly use a clean TLS client context without load_default_certs() or disk lookups
     try:
-        raw = _socks5_connect(host, 443, sport=sport, timeout=timeout)
-        try:
-            ctx = ssl.create_default_context()
-        except Exception:
-            ctx = ssl._create_unverified_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        try:
-            sock = ctx.wrap_socket(raw, server_hostname=host)
-        except Exception:
-            # Fallback for frozen / restricted Windows environments where OpenSSL lacks cert stores
-            ctx = ssl._create_unverified_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-            sock = ctx.wrap_socket(raw, server_hostname=host)
-        try:
-            req = (f"GET {path} HTTP/1.1\r\nHost: {host}\r\n"
-                   "User-Agent: Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0\r\nConnection: close\r\nAccept: application/json,*/*\r\n\r\n")
-            sock.sendall(req.encode())
-            while True:
-                chunk = sock.recv(4096)
-                if not chunk:
-                    break
-                buf += chunk
-        finally:
-            sock.close()
-    except Exception as https_err:
-        log.debug("HTTPS check via tor failed (%s); trying HTTP fallback", https_err)
-        # Resilient fallback: Plain HTTP via Tor SOCKS on port 80 (avoids any OpenSSL bundle failures)
-        raw = _socks5_connect(host, 80, sport=sport, timeout=timeout)
-        try:
-            req = (f"GET {path} HTTP/1.1\r\nHost: {host}\r\n"
-                   "User-Agent: Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0\r\nConnection: close\r\nAccept: application/json,*/*\r\n\r\n")
-            raw.sendall(req.encode())
-            buf = b""
-            while True:
-                chunk = raw.recv(4096)
-                if not chunk:
-                    break
-                buf += chunk
-        finally:
-            raw.close()
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except Exception:
+        ctx = ssl._create_unverified_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    sock = ctx.wrap_socket(raw, server_hostname=host)
+    try:
+        req = (f"GET {path} HTTP/1.1\r\nHost: {host}\r\n"
+               "User-Agent: Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0\r\nConnection: close\r\nAccept: application/json,*/*\r\n\r\n")
+        sock.sendall(req.encode())
+        buf = b""
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            buf += chunk
+    finally:
+        sock.close()
 
     head, _, body = buf.partition(b"\r\n\r\n")
     text = body.decode("utf-8", "replace").strip()
@@ -159,9 +135,17 @@ def check_proxy() -> Result:
 
 
 def check_tor_exit() -> Result:
+    sport = SOCKS_PORT
     try:
-        data = _http_json_via_tor("check.torproject.org", "/api/ip", sport=SOCKS_PORT)
+        from .config import load
+        cfg = load()
+        sport = getattr(cfg, "socks_port", SOCKS_PORT)
+    except Exception:
+        pass
+    try:
+        data = _http_json_via_tor("check.torproject.org", "/api/ip", sport=sport)
     except Exception as exc:  # noqa: BLE001
+        log.warning("tor exit probe failed: %s", exc)
         return Result("Tor exit", "warn", f"could not reach check service via tor: {exc}")
     if data.get("IsTor"):
         return Result("Tor exit", "pass", f"exit IP {data.get('IP', '?')}")

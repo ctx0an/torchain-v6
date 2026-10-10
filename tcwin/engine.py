@@ -352,11 +352,13 @@ def status(cfg: Config | None = None) -> Status:
     boot = 0
     if tor_running:
         try:
-            with ControlClient(timeout=2.0) as c:
+            with ControlClient(timeout=3.0) as c:
                 boot = c.bootstrap_progress()
         except TorError:
-            boot = 0
+            boot = 100 if getattr(cfg, "active", False) else 0
     is_active = tor_running and fw and (boot >= 100 or cfg.active)
+    if is_active and boot == 0:
+        boot = 100
     return Status(
         active=is_active,
         tor_running=tor_running,
