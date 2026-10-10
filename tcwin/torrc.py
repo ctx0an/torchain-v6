@@ -17,18 +17,33 @@ from . import DATA_DIR, LOG_DIR
 from .config import Config
 
 
+def _default_tor_dir() -> str | None:
+    try:
+        from .engine import find_tor
+        t = find_tor()
+        if t:
+            return os.path.dirname(t)
+    except Exception:
+        pass
+    cand = os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "torchain", "app", "tor", "Tor")
+    if os.path.isdir(cand):
+        return cand
+    return None
+
+
 def _plugin_path(tor_dir: str | None, *names: str) -> str | None:
     for n in names:
         p = shutil.which(n)
         if p:
             return p
-    if tor_dir:
+    target_dir = tor_dir or _default_tor_dir()
+    if target_dir:
         # Search the tor directory itself, and also the PluggableTransports
         # subdirectory (used by the Tor Expert Bundle / bundled Tor.zip).
         search_dirs = [
-            tor_dir,
-            os.path.join(tor_dir, "PluggableTransports"),
-            os.path.join(os.path.dirname(tor_dir), "PluggableTransports"),
+            target_dir,
+            os.path.join(target_dir, "PluggableTransports"),
+            os.path.join(os.path.dirname(target_dir), "PluggableTransports"),
         ]
         for d in search_dirs:
             for n in names:
@@ -38,8 +53,36 @@ def _plugin_path(tor_dir: str | None, *names: str) -> str | None:
     return None
 
 
+def is_transport_supported(transport: str, tor_dir: str | None = None) -> bool:
+    """Return True if the pluggable transport executable exists on this system."""
+    t = transport.lower()
+    if t in ("obfs4", "meek_lite"):
+        return _plugin_path(tor_dir, "obfs4proxy", "lyrebird") is not None
+    if t == "snowflake":
+        return _plugin_path(tor_dir, "snowflake-client", "snowflake") is not None
+    if t == "webtunnel":
+        return _plugin_path(tor_dir, "webtunnel-client", "webtunnel") is not None
+    if t == "conjure":
+        return _plugin_path(tor_dir, "conjure-client", "conjure") is not None
+    return False
+
+
+def available_transports(tor_dir: str | None = None) -> list[str]:
+    """Return the list of pluggable transports actually available on this system."""
+    avail: list[str] = []
+    if _plugin_path(tor_dir, "obfs4proxy", "lyrebird"):
+        avail.extend(["obfs4", "meek_lite"])
+    if _plugin_path(tor_dir, "conjure-client", "conjure"):
+        avail.append("conjure")
+    if _plugin_path(tor_dir, "snowflake-client", "snowflake"):
+        avail.append("snowflake")
+    if _plugin_path(tor_dir, "webtunnel-client", "webtunnel"):
+        avail.append("webtunnel")
+    return avail
+
+
 def _transport_for_line(line: str) -> str | None:
-    m = re.match(r"^(?:bridge\s+)?(obfs4|snowflake|meek_lite|webtunnel)\b", line.strip(), re.I)
+    m = re.match(r"^(?:bridge\s+)?(obfs4|snowflake|meek_lite|webtunnel|conjure)\b", line.strip(), re.I)
     return m.group(1).lower() if m else None
 
 
@@ -48,11 +91,11 @@ def _transport_lines(cfg: Config, tor_dir: str | None) -> list[str]:
 
     for br in cfg.custom_bridges:
         t = _transport_for_line(br)
-        if t and t not in needed:
+        if t and t not in needed and is_transport_supported(t, tor_dir):
             needed.append(t)
 
     bt = cfg.bridge_type
-    if bt not in needed and bt != "custom":
+    if bt not in needed and bt != "custom" and is_transport_supported(bt, tor_dir):
         needed.insert(0, bt)
 
     out: list[str] = []
@@ -76,6 +119,12 @@ def _transport_lines(cfg: Config, tor_dir: str | None) -> list[str]:
                 continue
             path_clean = path.replace("\\", "/")
             line = f'ClientTransportPlugin webtunnel exec "{path_clean}"'
+        elif t == "conjure":
+            path = _plugin_path(tor_dir, "conjure-client", "conjure")
+            if not path:
+                continue
+            path_clean = path.replace("\\", "/")
+            line = f'ClientTransportPlugin conjure exec "{path_clean}"'
         else:
             continue
         if line not in seen_lines:
@@ -87,14 +136,35 @@ def _transport_lines(cfg: Config, tor_dir: str | None) -> list[str]:
 def _bridge_lines(cfg: Config, tor_dir: str | None) -> list[str]:
     if not cfg.use_bridges:
         return []
+
+    valid_bridges: list[str] = []
+    for br in cfg.custom_bridges:
+        br_str = br.strip()
+        if not br_str or br_str.startswith("#"):
+            continue
+        t = _transport_for_line(br_str)
+        if t and not is_transport_supported(t, tor_dir):
+            from .log import get_logger
+            get_logger().warning(
+                "Skipping bridge with unbundled transport '%s': %s",
+                t, br_str[:50]
+            )
+            continue
+        if not br_str.lower().startswith("bridge "):
+            br_str = "Bridge " + br_str
+        valid_bridges.append(br_str)
+
+    if not valid_bridges:
+        from .log import get_logger
+        get_logger().warning(
+            "UseBridges is enabled but no valid bridge lines are configured. "
+            "Disabling bridges to prevent Tor configuration failure."
+        )
+        return []
+
     lines = ["UseBridges 1"]
     lines.extend(_transport_lines(cfg, tor_dir))
-    for br in cfg.custom_bridges:
-        br = br.strip()
-        if br and not br.startswith("#"):
-            if not br.lower().startswith("bridge "):
-                br = "Bridge " + br
-            lines.append(br)
+    lines.extend(valid_bridges)
     return lines
 
 

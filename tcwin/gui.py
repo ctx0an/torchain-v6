@@ -415,6 +415,8 @@ class TorChainGUI:
         ttk.OptionMenu(row, self.var_bridge_type, self.cfg.bridge_type,
                        *bridges_mod.BRIDGE_TYPES).pack(side="left")
         self._btn(row, "SAVE TYPE", self._save_bridge_type, kind="ghost").pack(side="left", padx=SPACE["sm"])
+        tk.Label(inner, text="Bundled on Windows: obfs4, meek_lite, conjure  (obfs4 recommended)",
+                 bg=P.surface, fg=P.accent, font=font(9), anchor="w").pack(fill="x", pady=(SPACE["xs"], 0))
         tk.Label(inner, text="Add a custom bridge line (e.g. 'obfs4 1.2.3.4:443 <FP> cert=... iat-mode=0')",
                  bg=P.surface, fg=P.text_faint, font=font(9), anchor="w").pack(fill="x", pady=(SPACE["sm"], 0))
         self.bridge_entry = tk.Entry(inner, bg=P.overlay, fg=P.text,
@@ -458,9 +460,18 @@ class TorChainGUI:
     # -- bridge handlers --
     def _save_bridge_type(self):
         from . import bridges as b
+        from .torrc import is_transport_supported, available_transports
         try:
-            self.cfg = b.set_type(self.var_bridge_type.get(), self.cfg)
-            self.sub_status.configure(text="Bridge type saved.", fg=P.ok)
+            bt = self.var_bridge_type.get()
+            self.cfg = b.set_type(bt, self.cfg)
+            avail = available_transports()
+            if bt != "custom" and not is_transport_supported(bt):
+                self.sub_status.configure(
+                    text=f"Saved. Note: {bt} is not installed (bundled: {', '.join(avail)}).",
+                    fg=P.warn,
+                )
+            else:
+                self.sub_status.configure(text="Bridge type saved.", fg=P.ok)
         except TorChainError as exc:
             self._notify(exc)
 

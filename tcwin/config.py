@@ -16,7 +16,7 @@ from .log import get_logger
 
 log = get_logger()
 
-_VALID_BRIDGE_TYPES = ("obfs4", "snowflake", "meek_lite", "webtunnel", "custom")
+_VALID_BRIDGE_TYPES = ("obfs4", "snowflake", "meek_lite", "webtunnel", "conjure", "custom")
 
 
 @dataclass

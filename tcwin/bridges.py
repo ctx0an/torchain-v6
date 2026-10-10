@@ -33,7 +33,7 @@ BRIDGE_TYPES = _VALID_BRIDGE_TYPES
 # while plain bridges are "IP:PORT [FINGERPRINT]".
 _OBFS4_RE = re.compile(r"^obfs4\s+\d{1,3}(?:\.\d{1,3}){3}:\d{2,5}\s+[0-9A-Fa-f]{40}\s+cert=\S+")
 _PLAIN_RE = re.compile(r"^(?:Bridge\s+)?\d{1,3}(?:\.\d{1,3}){3}:\d{2,5}(?:\s+[0-9A-Fa-f]{40})?$")
-_GENERIC_PT_RE = re.compile(r"^(snowflake|meek_lite|webtunnel|obfs4)\s+\S+")
+_GENERIC_PT_RE = re.compile(r"^(snowflake|meek_lite|webtunnel|obfs4|conjure)\s+\S+", re.I)
 
 
 def validate_bridge_line(line: str) -> bool:
@@ -49,6 +49,13 @@ def set_type(bridge_type: str, cfg: Config | None = None) -> Config:
     if bridge_type not in BRIDGE_TYPES:
         raise ConfigError(f"unknown bridge type '{bridge_type}'",
                           hint=f"choose one of: {', '.join(BRIDGE_TYPES)}")
+    from .torrc import is_transport_supported, available_transports
+    if bridge_type != "custom" and not is_transport_supported(bridge_type):
+        avail = available_transports()
+        log.warning(
+            "Transport '%s' is not installed (bundled on Windows: %s).",
+            bridge_type, ", ".join(avail) if avail else "none"
+        )
     cfg.bridge_type = bridge_type
     config_mod.save(cfg)
     log.info("bridge type set to %s", bridge_type)
@@ -77,6 +84,7 @@ def add(lines, cfg: Config | None = None) -> Config:
     if isinstance(lines, str):
         lines = [lines]
     added = 0
+    from .torrc import is_transport_supported, available_transports
     for raw in lines:
         line = raw.strip()
         if not validate_bridge_line(line):
@@ -84,15 +92,22 @@ def add(lines, cfg: Config | None = None) -> Config:
                 f"invalid bridge line: {line[:60]}",
                 hint="Expected e.g. 'obfs4 1.2.3.4:443 <FP> cert=... iat-mode=0'.",
             )
+        t = _detect_transport([line])
+        if t and not is_transport_supported(t):
+            avail = available_transports()
+            raise ConfigError(
+                f"Pluggable transport '{t}' is not supported/installed on Windows.",
+                hint=f"Bundled transports: {', '.join(avail) if avail else 'none'}. Use an obfs4 bridge line instead.",
+            )
         if line not in cfg.custom_bridges:
             cfg.custom_bridges.append(line)
             added += 1
     # Auto-align bridge_type with the transport detected in the added lines so
-    # the correct ClientTransportPlugin is registered (fixes pasting a webtunnel
+    # the correct ClientTransportPlugin is registered (fixes pasting a bridge
     # line while bridge_type is still the default 'obfs4').
     if added:
         detected = _detect_transport(cfg.custom_bridges)
-        if detected and cfg.bridge_type != detected:
+        if detected and cfg.bridge_type != detected and is_transport_supported(detected):
             cfg.bridge_type = detected
     config_mod.save(cfg)
     log.info("added %d custom bridge(s)", added)
@@ -214,20 +229,31 @@ def fetch_bridges(transport: str = "obfs4", url: str | None = None) -> list[str]
     except json.JSONDecodeError:
         data = None
 
+    from .torrc import is_transport_supported
     if isinstance(data, dict):
-        for key in (transport, "meek", "meek-azure", "snowflake", "webtunnel"):
+        target_keys = [transport]
+        if transport == "meek":
+            target_keys.extend(["meek-azure"])
+        elif transport in ("any", "all"):
+            target_keys = ["obfs4", "meek", "meek-azure", "conjure", "snowflake", "webtunnel"]
+
+        for key in target_keys:
             chunk = data.get(key, [])
             if isinstance(chunk, list):
-                lines.extend(chunk)
-        for val in data.values():
-            if isinstance(val, list):
-                for item in val:
-                    if isinstance(item, str) and validate_bridge_line(item) and item not in lines:
-                        lines.append(item)
+                for item in chunk:
+                    if isinstance(item, str) and validate_bridge_line(item):
+                        t = _detect_transport([item]) or key
+                        if not is_transport_supported(t):
+                            continue
+                        if item not in lines:
+                            lines.append(item)
     else:
         for raw in body.splitlines():
             ln = raw.strip()
             if validate_bridge_line(ln):
+                t = _detect_transport([ln])
+                if t and not is_transport_supported(t):
+                    continue
                 lines.append(ln)
 
     if not lines:

@@ -228,16 +228,15 @@ def fetch_bridges(transport: str = "obfs4", url: str | None = None) -> list[str]
         data = None
 
     if isinstance(data, dict):
-        for key in (transport, "meek", "meek-azure", "snowflake", "webtunnel"):
+        target_keys = [transport]
+        if transport == "meek":
+            target_keys.extend(["meek-azure"])
+        elif transport in ("any", "all"):
+            target_keys = ["obfs4", "meek", "meek-azure", "snowflake", "webtunnel"]
+        for key in target_keys:
             chunk = data.get(key, [])
             if isinstance(chunk, list):
                 for item in chunk:
-                    if isinstance(item, str) and validate_bridge_line(item) and item not in lines:
-                        lines.append(item)
-        # Also pick up *any* transport key (handles future transports).
-        for val in data.values():
-            if isinstance(val, list):
-                for item in val:
                     if isinstance(item, str) and validate_bridge_line(item) and item not in lines:
                         lines.append(item)
     else:
