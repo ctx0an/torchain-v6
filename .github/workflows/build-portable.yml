@@ -102,9 +102,10 @@ jobs:
           retention-days: 30
 
       - name: Upload to Release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v6.0.0
           files: |
             dist/torchain.exe
             dist/torchain-portable.zip

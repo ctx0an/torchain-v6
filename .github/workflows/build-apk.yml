@@ -56,7 +56,8 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
 
       - name: Upload APK to Release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v6.0.0
           files: app/build/outputs/apk/debug/*.apk
