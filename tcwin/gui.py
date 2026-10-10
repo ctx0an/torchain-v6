@@ -26,7 +26,7 @@ from .theme import SPACE, font
 from .animations import ProGyroBootHUD, ProCyberButton, pulse_node_elastic
 
 REPO_URL = "https://github.com/ctx0an/torchain"
-CREDIT = "by ctx0an · Claude Opus 4.8"
+CREDIT = "by ctx0an"
 
 
 class TorChainGUI:
@@ -759,9 +759,15 @@ class TorChainGUI:
                 if kind == "progress":
                     self.boot_bar["value"] = result
                     continue
+                if kind == "status":
+                    if cb:
+                        cb(result)
+                    continue
                 self._busy = False
                 if err is not None:
-                    self.connect_btn.configure(text="CONNECT")
+                    st = self._last_status
+                    if not st or not st.active:
+                        self.connect_btn.configure(text="CONNECT")
                     self._notify(err)
                 elif cb:
                     cb(result)
@@ -771,6 +777,7 @@ class TorChainGUI:
             self.root.after(120, self._drain_events)
 
     def _notify(self, exc):
+        self._has_error_message = True
         msg = exc.render() if isinstance(exc, TorChainError) else str(exc)
         self.sub_status.configure(text=msg, fg=P.err)
 
@@ -961,8 +968,13 @@ class TorChainGUI:
     def _poll_status(self):
         if getattr(self, "_closing", False):
             return
-        if not self._busy:
-            self._run_worker(engine.status, self._apply_status)
+        def _get_status():
+            try:
+                st = engine.status()
+                self._events.put(("status", self._apply_status, st, None))
+            except Exception:
+                pass
+        threading.Thread(target=_get_status, daemon=True).start()
         if not getattr(self, "_closing", False):
             self.root.after(2000, self._poll_status)
 
@@ -978,29 +990,35 @@ class TorChainGUI:
             return
         prev = self._last_status
         self._last_status = st
-        # Only touch widgets when something changed.
-        if not prev or prev.active != st.active:
-            if st.active:
-                self.big_status.configure(text="PROTECTED", fg=P.ok)
-                self.sub_status.configure(text="All traffic is routed through the Tor network.",
-                                          fg=P.text_dim)
-                self.status_pill.configure(text="●  PROTECTED", fg=P.ok)
-                self.connect_btn.configure(text="DISCONNECT", bg=P.dragon)
-            else:
-                self.big_status.configure(text="INACTIVE", fg=P.idle)
+
+        # Status and button configuration
+        if st.active and st.tor_running:
+            self._has_error_message = False
+            self.big_status.configure(text="PROTECTED", fg=P.ok)
+            self.sub_status.configure(text="All traffic is routed through the Tor network.",
+                                      fg=P.text_dim)
+            self.status_pill.configure(text="●  PROTECTED", fg=P.ok)
+            self.connect_btn.configure(text="DISCONNECT", bg=P.dragon)
+        elif st.tor_running and not st.active:
+            self.big_status.configure(text="CONNECTING", fg=P.warn)
+            self.sub_status.configure(text=f"Bootstrapping Tor ({st.bootstrap}%)…",
+                                      fg=P.warn)
+            self.status_pill.configure(text="●  CONNECTING", fg=P.warn)
+            self.connect_btn.configure(text="CANCEL", bg=P.dragon)
+        else:
+            self.big_status.configure(text="INACTIVE", fg=P.idle)
+            if not getattr(self, "_has_error_message", False):
                 self.sub_status.configure(text="All traffic is using your real connection.",
                                           fg=P.text_dim)
-                self.status_pill.configure(text="●  INACTIVE", fg=P.idle)
-                self.connect_btn.configure(text="CONNECT", bg=P.accent)
-        if not prev or prev.bootstrap != st.bootstrap:
-            self.boot_bar["value"] = st.bootstrap
-            self.tile_vals["boot"].configure(text=f"{st.bootstrap}%")
-        if not prev or prev.pid != st.pid:
-            self.tile_vals["pid"].configure(text=str(st.pid) if st.pid else "—")
-        if not prev or prev.firewall_up != st.firewall_up:
-            self.tile_vals["fw"].configure(
-                text="ON" if st.firewall_up else "OFF",
-                fg=P.ok if st.firewall_up else P.idle)
+            self.status_pill.configure(text="●  INACTIVE", fg=P.idle)
+            self.connect_btn.configure(text="CONNECT", bg=P.accent)
+
+        self.boot_bar["value"] = st.bootstrap
+        self.tile_vals["boot"].configure(text=f"{st.bootstrap}%")
+        self.tile_vals["pid"].configure(text=str(st.pid) if st.pid else "—")
+        self.tile_vals["fw"].configure(
+            text="ON" if st.firewall_up else "OFF",
+            fg=P.ok if st.firewall_up else P.idle)
         if self._active_view == "logs":
             self._refresh_logs()
 

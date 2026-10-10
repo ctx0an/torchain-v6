@@ -347,6 +347,7 @@ def status(cfg: Config | None = None) -> Status:
     cfg = cfg or config_mod.load()
     pid = _read_pid()
     tor_running = pid_alive(pid)
+    reported_pid = pid if tor_running else None
     fw = firewall.is_active()
     boot = 0
     if tor_running:
@@ -355,12 +356,13 @@ def status(cfg: Config | None = None) -> Status:
                 boot = c.bootstrap_progress()
         except TorError:
             boot = 0
+    is_active = tor_running and fw and (boot >= 100 or cfg.active)
     return Status(
-        active=tor_running and fw,
+        active=is_active,
         tor_running=tor_running,
         firewall_up=fw,
-        bootstrap=boot,
-        pid=pid,
+        bootstrap=boot if tor_running else 0,
+        pid=reported_pid,
         watchdog=watchdog.is_running(),
     )
 

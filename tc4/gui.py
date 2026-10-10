@@ -26,7 +26,7 @@ from .theme import SPACE, font
 from .animations import ProGyroBootHUD, ProCyberButton, pulse_node_elastic
 
 REPO_URL = "https://github.com/ctx0an/torchain"
-CREDIT = "by ctx0an · Claude Opus 4.8"
+CREDIT = "by ctx0an"
 
 
 class TorChainGUI:

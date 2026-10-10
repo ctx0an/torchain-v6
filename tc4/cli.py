@@ -298,11 +298,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="torchain",
         description="torchain — fast, system-wide Tor anonymizer",
-        epilog="Created by ctx0an with Claude Opus 4.8 · https://github.com/ctx0an/torchain",
+        epilog="Created by ctx0an · https://github.com/ctx0an/torchain",
     )
     p.add_argument("-v", "--verbose", action="store_true", help="verbose logging")
     p.add_argument("-V", "--version", action="version",
-                   version=f"torchain {__version__}  (by ctx0an · Claude Opus 4.8)")
+                   version=f"torchain {__version__}  (by ctx0an)")
     sub = p.add_subparsers(dest="command", required=True)
 
     sub.add_parser("start", help="route all traffic through tor").set_defaults(fn=cmd_start)
