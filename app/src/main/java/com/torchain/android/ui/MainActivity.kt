@@ -79,7 +79,7 @@ private fun AppRoot() {
                     try {
                         val intent = android.content.Intent(
                             android.content.Intent.ACTION_VIEW,
-                            android.net.Uri.parse("https://github.com/ctx0an/torchain")
+                            android.net.Uri.parse("https://github.com/ctx0an/torchain-v6")
                         )
                         context.startActivity(intent)
                     } catch (e: android.content.ActivityNotFoundException) {

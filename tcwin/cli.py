@@ -319,7 +319,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="torchain",
         description="torchain - fast, system-wide Tor anonymizer (Windows 11)",
-        epilog="Created by ctx0an · https://github.com/ctx0an/torchain",
+        epilog="Created by ctx0an · https://github.com/ctx0an/torchain-v6",
     )
     p.add_argument("-v", "--verbose", action="store_true", help="verbose logging")
     p.add_argument("-V", "--version", action="version",

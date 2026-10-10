@@ -25,7 +25,7 @@ from .theme import PALETTE as P
 from .theme import SPACE, font
 from .animations import ProGyroBootHUD, ProCyberButton, pulse_node_elastic
 
-REPO_URL = "https://github.com/ctx0an/torchain"
+REPO_URL = "https://github.com/ctx0an/torchain-v6"
 CREDIT = "by ctx0an"
 
 

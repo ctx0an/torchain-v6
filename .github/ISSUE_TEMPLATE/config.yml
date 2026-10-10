@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability (report privately)
-    url: https://github.com/ctx0an/torchain/security/advisories/new
+    url: https://github.com/ctx0an/torchain-v6/security/advisories/new
     about: Please report security issues privately, not as public issues. See SECURITY.md.
   - name: Questions & discussion
-    url: https://github.com/ctx0an/torchain/discussions
+    url: https://github.com/ctx0an/torchain-v6/discussions
     about: Ask questions and share your setups in Discussions.
