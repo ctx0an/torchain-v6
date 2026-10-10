@@ -20,7 +20,7 @@ from .log import get_logger
 log = get_logger()
 
 _COOKIE = os.path.join(DATA_DIR, "tor", "control_auth_cookie")
-_FP_RE = re.compile(r"\$([0-9A-Fa-f]{40})(?:=([^,\s]+))?")
+_FP_RE = re.compile(r"\$([0-9A-Fa-f]{40})(?:[=~]([^,\s]+))?")
 
 _RELAY_IP_CACHE: dict[str, str | None] = {}
 _IP_COUNTRY_CACHE: dict[str, str] = {}
@@ -83,11 +83,28 @@ class ControlClient:
 
     @staticmethod
     def _reply_complete(buf: bytes) -> bool:
-        # A final line looks like 'NNN <text>'; mid lines use 'NNN-' or 'NNN+'.
-        for line in buf.decode("utf-8", "replace").splitlines():
-            if len(line) >= 4 and line[3] == " " and line[:3].isdigit():
-                return True
-        return False
+        if not buf.endswith(b"\r\n") and not buf.endswith(b"\n"):
+            return False
+        try:
+            text = buf.decode("utf-8", "replace")
+        except Exception:
+            return False
+        lines = text.splitlines()
+        if not lines:
+            return False
+        in_data_block = False
+        for line in lines:
+            if in_data_block:
+                if line == ".":
+                    in_data_block = False
+            elif len(line) >= 4 and line[:3].isdigit() and line[3] == "+":
+                in_data_block = True
+
+        if in_data_block:
+            return False
+
+        last = lines[-1]
+        return len(last) >= 4 and last[:3].isdigit() and last[3] == " "
 
     def _command(self, line: str) -> list[str]:
         self._send(line)
@@ -168,38 +185,43 @@ class ControlClient:
                 if line.startswith("r "):
                     parts = line.split()
                     if len(parts) >= 8:
-                        ip = parts[5]
-                        _RELAY_IP_CACHE[fp] = ip
-                        return ip
+                        candidate = parts[6]
+                        if "." in candidate or ":" in candidate:
+                            _RELAY_IP_CACHE[fp] = candidate
+                            return candidate
         # Fallback: full descriptor (bridges, etc.)
         try:
             raw = self.get_info(f"desc/id/{fp}")
         except TorError:
-            _RELAY_IP_CACHE[fp] = None
-            return None
-        for line in raw.splitlines():
-            if line.startswith("router "):
-                parts = line.split()
-                if len(parts) >= 6:
-                    ip = parts[2]
-                    _RELAY_IP_CACHE[fp] = ip
-                    return ip
-            if line.startswith("or-address "):
-                parts = line.split()
-                if len(parts) >= 2:
-                    ip = parts[1].rsplit(":", 1)[0]
-                    _RELAY_IP_CACHE[fp] = ip
-                    return ip
+            pass
+        else:
+            for line in raw.splitlines():
+                if line.startswith("router "):
+                    parts = line.split()
+                    if len(parts) >= 6:
+                        candidate = parts[2]
+                        if "." in candidate or ":" in candidate:
+                            _RELAY_IP_CACHE[fp] = candidate
+                            return candidate
+                if line.startswith("or-address "):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        candidate = parts[1].rsplit(":", 1)[0].strip("[]")
+                        if "." in candidate or ":" in candidate:
+                            _RELAY_IP_CACHE[fp] = candidate
+                            return candidate
         _RELAY_IP_CACHE[fp] = None
         return None
 
     @functools.lru_cache(maxsize=1024)
     def ip_country(self, ip: str) -> str:
         """Get 2-letter country code for an IP via tor's GeoIP."""
+        if not ip or ip in ("?", "00:00:00") or not ("." in ip or ":" in ip):
+            return "??"
         if ip in _IP_COUNTRY_CACHE:
             return _IP_COUNTRY_CACHE[ip]
         try:
-            res = self.get_info(f"ip-to-country/{ip}").strip()
+            res = self.get_info(f"ip-to-country/{ip}").strip().upper()
         except TorError:
             res = "??"
         _IP_COUNTRY_CACHE[ip] = res
@@ -220,7 +242,12 @@ class ControlClient:
                 data_lines.append(line)
             elif line.startswith("250-circuit-status="):
                 val = line.split("=", 1)[1] if "=" in line else ""
-                data_lines.append(val)
+                if val:
+                    data_lines.append(val)
+            elif line.startswith("250 circuit-status="):
+                val = line.split("=", 1)[1] if "=" in line else ""
+                if val:
+                    data_lines.append(val)
 
         for raw_line in data_lines:
             ln = raw_line.strip()

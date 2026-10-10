@@ -900,12 +900,17 @@ class TorChainGUI:
                 from .torctl import ControlClient
                 with ControlClient(timeout=5) as c:
                     return c.circuit_details()
-            except Exception:
+            except Exception as exc:
+                log.debug("refresh circuits error: %s", exc)
                 return None
         def show(circuits):
             self.circ_tree.delete(*self.circ_tree.get_children())
+            st = getattr(self, "_last_status", None)
             if circuits is None:
-                self.circ_tree.insert("", "end", values=("—", "OFFLINE", "", "tor is not running"))
+                if st and st.tor_running:
+                    self.circ_tree.insert("", "end", values=("—", "BUSY", "", "circuits establishing / busy… (click REFRESH)"))
+                else:
+                    self.circ_tree.insert("", "end", values=("—", "OFFLINE", "", "tor is not running"))
                 return
             for circ in circuits or []:
                 hops = circ.get("hops", [])
@@ -913,14 +918,17 @@ class TorChainGUI:
                 for h in hops:
                     ip = h.get("ip", "?")
                     nick = h.get("nickname", "?")[:15]
-                    cc = h.get("country", "??")
+                    cc = (h.get("country") or "??").upper()
                     path_parts.append(f"{ip} ({nick}, {cc})")
                 path_str = " → ".join(path_parts) if path_parts else "—"
                 n_hops = len(hops)
                 self.circ_tree.insert("", "end",
                     values=(circ["id"], circ["status"], n_hops, path_str))
             if not self.circ_tree.get_children():
-                self.circ_tree.insert("", "end", values=("—", "IDLE", "", "no active circuits yet"))
+                if st and st.tor_running:
+                    self.circ_tree.insert("", "end", values=("—", "BUILDING", "", "no active circuits yet (click REFRESH)"))
+                else:
+                    self.circ_tree.insert("", "end", values=("—", "IDLE", "", "no active circuits yet"))
         self._run_worker(load, show)
 
     def _run_leaktest(self, quick):
@@ -992,6 +1000,10 @@ class TorChainGUI:
                 fg=P.ok if st.firewall_up else P.idle)
         if self._active_view == "logs":
             self._refresh_logs()
+        elif self._active_view == "circuits" and st.tor_running:
+            children = self.circ_tree.get_children()
+            if not children or any(self.circ_tree.item(c, "values")[1] in ("OFFLINE", "BUSY", "BUILDING", "") for c in children):
+                self._refresh_circuits()
 
     # ------------------------------------------------------------------
     # Logs tailing
