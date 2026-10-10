@@ -21,9 +21,12 @@ from . import LOG_FILE, __version__
 from . import config as config_mod
 from . import engine
 from .errors import TorChainError
+from .log import get_logger
 from .theme import PALETTE as P
 from .theme import SPACE, font
 from .animations import ProGyroBootHUD, ProCyberButton, pulse_node_elastic
+
+log = get_logger()
 
 REPO_URL = "https://github.com/ctx0an/torchain-v6"
 CREDIT = "by ctx0an"
