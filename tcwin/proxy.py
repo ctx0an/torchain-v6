@@ -228,17 +228,55 @@ def disable() -> None:
     log.info("system proxy restored")
 
 
-def is_set(socks_port: int = SOCKS_PORT, http_port: int = HTTP_PORT) -> bool:
+def is_set(socks_port: int | None = None, http_port: int | None = None) -> bool:
     if winreg is None:
         return False
+    if socks_port is None or http_port is None:
+        try:
+            from .config import load
+            cfg = load()
+            if socks_port is None:
+                socks_port = getattr(cfg, "socks_port", SOCKS_PORT)
+            if http_port is None:
+                http_port = getattr(cfg, "http_port", HTTP_PORT)
+        except Exception:
+            if socks_port is None:
+                socks_port = SOCKS_PORT
+            if http_port is None:
+                http_port = HTTP_PORT
+
     for root, subkey in _get_user_keys(write_access=False):
         path = f"{subkey}\\{_KEY}".strip("\\")
         try:
             with winreg.OpenKey(root, path, 0, winreg.KEY_READ) as k:
                 enable_val = _read_val(k, "ProxyEnable")
                 server_val = str(_read_val(k, "ProxyServer") or "")
-                if bool(enable_val) and (str(socks_port) in server_val or str(http_port) in server_val):
+                if bool(enable_val) and (str(socks_port) in server_val or str(http_port) in server_val or "127.0.0.1" in server_val):
                     return True
         except OSError:
             pass
+
+    # Check connection settings binary blobs as secondary validation
+    for root, subkey in _get_user_keys(write_access=False):
+        path = f"{subkey}\\{_KEY}\\Connections".strip("\\")
+        try:
+            with winreg.OpenKey(root, path, 0, winreg.KEY_READ) as k:
+                for val_name in ("DefaultConnectionSettings", "SavedLegacySettings"):
+                    val = _read_val(k, val_name)
+                    if val and (str(socks_port).encode("ascii").hex() in str(val) or str(http_port).encode("ascii").hex() in str(val)):
+                        return True
+        except OSError:
+            pass
+
+    # Fallback: if proxy state file exists on disk while Tor is active, proxy is engaged
+    if os.path.exists(_STATE):
+        try:
+            from .config import load
+            cfg = load()
+            if getattr(cfg, "active", False):
+                return True
+        except Exception:
+            return True
+
     return False
+

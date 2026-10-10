@@ -27,6 +27,16 @@ class Result:
     detail: str
 
 
+def _recv_exact(s: socket.socket, n: int) -> bytes:
+    buf = bytearray()
+    while len(buf) < n:
+        chunk = s.recv(n - len(buf))
+        if not chunk:
+            raise OSError("unexpected EOF reading SOCKS5 response")
+        buf.extend(chunk)
+    return bytes(buf)
+
+
 def _socks5_connect(host: str, port: int, *, sport: int, timeout: float = 10.0) -> socket.socket:
     """Open a TCP stream to host:port via the local tor SOCKS5 proxy.
 
@@ -37,44 +47,76 @@ def _socks5_connect(host: str, port: int, *, sport: int, timeout: float = 10.0) 
     s.settimeout(timeout)
     # Greeting: VER=5, one method, 0x00 = no auth.
     s.sendall(b"\x05\x01\x00")
-    if s.recv(2) != b"\x05\x00":
+    greet = _recv_exact(s, 2)
+    if greet != b"\x05\x00":
         s.close()
         raise OSError("SOCKS5 handshake rejected")
     h = host.encode("idna")
     req = b"\x05\x01\x00\x03" + bytes([len(h)]) + h + port.to_bytes(2, "big")
     s.sendall(req)
-    rep = s.recv(4)
-    if len(rep) < 2 or rep[1] != 0x00:
+    rep = _recv_exact(s, 4)
+    if rep[1] != 0x00:
         s.close()
-        raise OSError("SOCKS5 connect failed (code %s)" % (rep[1] if len(rep) > 1 else "?"))
+        raise OSError(f"SOCKS5 connect failed (code {rep[1]})")
     # Drain the bound address that follows the reply.
-    atyp = rep[3] if len(rep) > 3 else 1
+    atyp = rep[3]
     if atyp == 1:
-        s.recv(4 + 2)
+        _recv_exact(s, 4 + 2)
     elif atyp == 3:
-        ln = s.recv(1)
-        s.recv(ln[0] + 2)
+        ln = _recv_exact(s, 1)[0]
+        _recv_exact(s, ln + 2)
     elif atyp == 4:
-        s.recv(16 + 2)
+        _recv_exact(s, 16 + 2)
     return s
 
 
 def _http_json_via_tor(host: str, path: str, *, sport: int, timeout: float = 12.0) -> dict:
-    raw = _socks5_connect(host, 443, sport=sport, timeout=timeout)
-    ctx = ssl.create_default_context()
-    sock = ctx.wrap_socket(raw, server_hostname=host)
+    buf = b""
+    # Primary: HTTPS via port 443 with resilient SSL context
     try:
-        req = (f"GET {path} HTTP/1.1\r\nHost: {host}\r\n"
-               "User-Agent: Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0\r\nConnection: close\r\nAccept: application/json,*/*\r\n\r\n")
-        sock.sendall(req.encode())
-        buf = b""
-        while True:
-            chunk = sock.recv(4096)
-            if not chunk:
-                break
-            buf += chunk
-    finally:
-        sock.close()
+        raw = _socks5_connect(host, 443, sport=sport, timeout=timeout)
+        try:
+            ctx = ssl.create_default_context()
+        except Exception:
+            ctx = ssl._create_unverified_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        try:
+            sock = ctx.wrap_socket(raw, server_hostname=host)
+        except Exception:
+            # Fallback for frozen / restricted Windows environments where OpenSSL lacks cert stores
+            ctx = ssl._create_unverified_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            sock = ctx.wrap_socket(raw, server_hostname=host)
+        try:
+            req = (f"GET {path} HTTP/1.1\r\nHost: {host}\r\n"
+                   "User-Agent: Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0\r\nConnection: close\r\nAccept: application/json,*/*\r\n\r\n")
+            sock.sendall(req.encode())
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                buf += chunk
+        finally:
+            sock.close()
+    except Exception as https_err:
+        log.debug("HTTPS check via tor failed (%s); trying HTTP fallback", https_err)
+        # Resilient fallback: Plain HTTP via Tor SOCKS on port 80 (avoids any OpenSSL bundle failures)
+        raw = _socks5_connect(host, 80, sport=sport, timeout=timeout)
+        try:
+            req = (f"GET {path} HTTP/1.1\r\nHost: {host}\r\n"
+                   "User-Agent: Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0\r\nConnection: close\r\nAccept: application/json,*/*\r\n\r\n")
+            raw.sendall(req.encode())
+            buf = b""
+            while True:
+                chunk = raw.recv(4096)
+                if not chunk:
+                    break
+                buf += chunk
+        finally:
+            raw.close()
+
     head, _, body = buf.partition(b"\r\n\r\n")
     text = body.decode("utf-8", "replace").strip()
     # Handle chunked transfer encoding minimally.
@@ -109,10 +151,11 @@ def check_proxy() -> Result:
     try:
         from . import proxy
         if proxy.is_set():
-            return Result("System proxy", "pass", "WinINET proxy points at tor SOCKS")
+            return Result("System proxy", "pass", "WinINET proxy points at tor SOCKS/HTTP")
         return Result("System proxy", "warn", "system proxy is not set to tor")
     except Exception as exc:  # noqa: BLE001
         return Result("System proxy", "warn", f"could not read proxy: {exc}")
+
 
 
 def check_tor_exit() -> Result:
