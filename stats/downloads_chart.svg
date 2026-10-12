@@ -15,7 +15,7 @@
 
   <!-- Title & Total Badge -->
   <text x="65" y="36" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="16" font-weight="700">Release Downloads History</text>
-  <text x="65" y="54" fill="#64748b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="12">Total Cumulative Downloads: <tspan fill="#38bdf8" font-weight="bold">0</tspan></text>
+  <text x="65" y="54" fill="#64748b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="12">Total Cumulative Downloads: <tspan fill="#38bdf8" font-weight="bold">2</tspan></text>
 
   <!-- Legend -->
   <g transform="translate(325, 24)">
@@ -29,17 +29,17 @@
     <text x="200" y="12" fill="#94a3b8" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11">.apk: 0</text>
 
     <circle cx="285" cy="8" r="4" fill="#fb923c"/>
-    <text x="295" y="12" fill="#94a3b8" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11">AppImage: 0</text>
+    <text x="295" y="12" fill="#94a3b8" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11">AppImage: 2</text>
   </g>
 
   <!-- Grid -->
   <line x1="65" y1="300.0" x2="765" y2="300.0" stroke="#1e293b" stroke-width="1" stroke-dasharray="3,3"/><text x="53" y="304.0" fill="#64748b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11" text-anchor="end">0</text><line x1="65" y1="256.2" x2="765" y2="256.2" stroke="#1e293b" stroke-width="1" stroke-dasharray="3,3"/><text x="53" y="260.2" fill="#64748b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11" text-anchor="end">4</text><line x1="65" y1="212.4" x2="765" y2="212.4" stroke="#1e293b" stroke-width="1" stroke-dasharray="3,3"/><text x="53" y="216.4" fill="#64748b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11" text-anchor="end">8</text><line x1="65" y1="168.6" x2="765" y2="168.6" stroke="#1e293b" stroke-width="1" stroke-dasharray="3,3"/><text x="53" y="172.6" fill="#64748b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11" text-anchor="end">12</text><line x1="65" y1="124.8" x2="765" y2="124.8" stroke="#1e293b" stroke-width="1" stroke-dasharray="3,3"/><text x="53" y="128.8" fill="#64748b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11" text-anchor="end">16</text><line x1="65" y1="70.0" x2="765" y2="70.0" stroke="#1e293b" stroke-width="1" stroke-dasharray="3,3"/><text x="53" y="74.0" fill="#64748b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11" text-anchor="end">21</text>
 
   <!-- Area fill & Line path -->
-  <path d="M 65.0 300 L 65.0 157.6 L 765.0 300.0 L 765.0 300 Z" fill="url(#areaGradient)"/>
-  <path d="M 65.0 157.6 L 765.0 300.0" fill="none" stroke="url(#lineGradient)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 65.0 300 L 65.0 157.6 L 415.0 300.0 L 765.0 278.1 L 765.0 300 Z" fill="url(#areaGradient)"/>
+  <path d="M 65.0 157.6 L 415.0 300.0 L 765.0 278.1" fill="none" stroke="url(#lineGradient)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
 
   <!-- Markers & X-ticks -->
-  <circle cx="65.0" cy="157.6" r="4" fill="#00f2fe" stroke="#0f172a" stroke-width="2"/><text x="65.0" y="147.6" fill="#38bdf8" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11" font-weight="600" text-anchor="middle">13</text><circle cx="765.0" cy="300.0" r="4" fill="#00f2fe" stroke="#0f172a" stroke-width="2"/><text x="765.0" y="290.0" fill="#38bdf8" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11" font-weight="600" text-anchor="middle">0</text>
-  <text x="65.0" y="322" fill="#64748b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11" text-anchor="middle">2026-10-10</text><text x="765.0" y="322" fill="#64748b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11" text-anchor="middle">2026-10-11</text>
+  <circle cx="65.0" cy="157.6" r="4" fill="#00f2fe" stroke="#0f172a" stroke-width="2"/><text x="65.0" y="147.6" fill="#38bdf8" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11" font-weight="600" text-anchor="middle">13</text><circle cx="415.0" cy="300.0" r="4" fill="#00f2fe" stroke="#0f172a" stroke-width="2"/><text x="415.0" y="290.0" fill="#38bdf8" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11" font-weight="600" text-anchor="middle">0</text><circle cx="765.0" cy="278.1" r="4" fill="#00f2fe" stroke="#0f172a" stroke-width="2"/><text x="765.0" y="268.1" fill="#38bdf8" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11" font-weight="600" text-anchor="middle">2</text>
+  <text x="65.0" y="322" fill="#64748b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11" text-anchor="middle">2026-10-10</text><text x="415.0" y="322" fill="#64748b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11" text-anchor="middle">2026-10-11</text><text x="765.0" y="322" fill="#64748b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11" text-anchor="middle">2026-10-12</text>
 </svg>
